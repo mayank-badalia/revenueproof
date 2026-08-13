@@ -11,7 +11,13 @@ dependencies = [
     "python-multipart>=0.0.17",
     "websockets>=13",
     # Validation / settings
-    "pydantic>=2.9",
+    # `[email]` pulls in email-validator, which `EmailStr` imports lazily at schema
+    # build time. It was reaching the local environment transitively through the dev
+    # extras, so every local run worked and the first clean production install died
+    # on import with "email-validator is not installed" — found by building the
+    # container rather than by any test, because no test installs only the runtime
+    # dependencies.
+    "pydantic[email]>=2.9",
     "pydantic-settings>=2.6",
     # Persistence
     "sqlalchemy>=2.0.36",

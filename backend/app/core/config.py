@@ -12,7 +12,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import computed_field
+from pydantic import computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -50,6 +50,23 @@ class Settings(BaseSettings):
 
     # ---- Data stores ----------------------------------------------------
     database_url: str = "postgresql+psycopg://revenueproof:revenueproof@localhost:55432/revenueproof"
+
+    @field_validator("database_url")
+    @classmethod
+    def _use_psycopg_driver(cls, value: str) -> str:
+        """Accept the URL a managed provider hands you, unchanged.
+
+        Render, Neon and Supabase all publish `postgres://` or `postgresql://`.
+        SQLAlchemy needs the driver named, and pasting the provider's own string
+        into the environment is what an operator will actually do — so the driver
+        is added here rather than left as a deployment footgun that surfaces as
+        "Can't load plugin: sqlalchemy.dialects:postgres".
+        """
+        if value.startswith("postgres://"):
+            value = "postgresql://" + value.removeprefix("postgres://")
+        if value.startswith("postgresql://"):
+            value = "postgresql+psycopg://" + value.removeprefix("postgresql://")
+        return value
     redis_url: str = "redis://localhost:56379/0"
     neo4j_uri: str = "neo4j://localhost:57687"
     neo4j_username: str = "neo4j"

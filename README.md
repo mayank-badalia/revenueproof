@@ -157,14 +157,42 @@ limit, four stateful services, a WebSocket for the live trace, and runs that tak
 47–113 seconds against a 60-second limit. It runs on a machine, exposed through a
 tunnel or a container host.
 
+### Backend on Render (always on)
+
+`render.yaml` is a blueprint: **New → Blueprint → pick this repo**. It creates the
+container, Postgres and Redis and wires them together. Three values it cannot
+generate for you:
+
+| Variable | Value |
+|---|---|
+| `TOKEN_ENCRYPTION_KEY` | `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `EXTRA_ALLOWED_ORIGINS` | your Vercel URL |
+| `CEREBRAS_API_KEY` | optional — without it every financial figure still computes, only contract reading and the critic's prose are skipped |
+
+Neo4j is not offered by Render. Leave `NEO4J_URI` unset and the graph detectors
+report themselves degraded rather than failing; point it at a free Neo4j Aura
+instance to turn related-party and circular-flow detection back on.
+
+Sizing is measured: **140 MB resident at rest, 410 MB peak** during a full run, so a
+512 MB instance fits with roughly 100 MB of headroom.
+
+### Frontend on Vercel
+
 ```bash
 cd frontend && vercel --prod
-# then point it at wherever the API is running:
-echo "https://your-api-host" | vercel env add NEXT_PUBLIC_API_BASE production
+echo "https://your-api.onrender.com" | vercel env add NEXT_PUBLIC_API_BASE production
+vercel --prod    # the API base is baked in at build time, so redeploy after changing it
 ```
 
-Set `EXTRA_ALLOWED_ORIGINS` in the backend's `.env` to the Vercel URL, or the browser
-will refuse every request from it.
+### Or from a laptop, for a live demo
+
+```bash
+./scripts/serve-demo.sh
+```
+
+Docker, the API and a public Cloudflare tunnel in one command. The tunnel URL changes
+each run and the frontend build embeds it, so this suits a demo you are present for
+rather than a link someone opens later.
 
 ---
 

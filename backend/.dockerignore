@@ -1,0 +1,23 @@
+# The virtualenv is 619 MB and is rebuilt inside the image; sending it to the
+# daemon would dominate the build context for no benefit.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Local evidence and test artefacts. Uploaded contract PDFs from local runs must
+# never be baked into a published image.
+data/
+tests/
+htmlcov/
+.coverage
+
+# Secrets, in case one is ever left here.
+.env
+.env.*
+*.pem
+*.key
