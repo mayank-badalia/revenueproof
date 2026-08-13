@@ -23,7 +23,12 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { ChangeImpact, DiligenceRoomData, EvidenceTrace } from "@/lib/types";
+import type {
+  ChangeImpact,
+  DiligenceRoomData,
+  EvidenceTrace,
+  WhyTheGap,
+} from "@/lib/types";
 
 const KIND_STYLE: Record<string, string> = {
   customer: "bg-slate-800",
@@ -186,6 +191,10 @@ export function DiligenceRoom({
             currency={position.currency}
             withheld={position.items_total - position.items_published}
           />
+
+          {room?.why_the_gap?.material && (
+            <GapExplainer gap={room.why_the_gap} currency={position.currency} />
+          )}
 
           <div className="mt-4 grid gap-3 sm:grid-cols-4">
             <Metric
@@ -586,4 +595,71 @@ function money(minor: number, currency: string): string {
   const whole = Math.trunc(minor / 100);
   const paise = Math.abs(minor % 100);
   return `${currency} ${whole.toLocaleString("en-IN")}.${String(paise).padStart(2, "0")}`;
+}
+
+/**
+ * Why the published figure sits below the claim.
+ *
+ * "Proven ₹0.00 against a claim of ₹1,50,00,000" is true and tells a reader nothing
+ * about whether the product failed, the evidence is missing, or the claim was wrong.
+ * Each of those is a different next action, and the difference is knowable from the
+ * data — so it is stated here rather than left to be inferred from fifty table rows.
+ *
+ * It also says the thing a verification tool is most tempted to leave out: the claim
+ * is an input, not a finding, and when almost none of it is evidenced the claim
+ * itself is one of the likelier explanations.
+ */
+function GapExplainer({ gap, currency }: { gap: WhyTheGap; currency: string }) {
+  return (
+    <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-4">
+      <p className="text-xs font-semibold text-amber-950">
+        Why {money(gap.shortfall ?? 0, currency)} of the claim is not in the figure
+        above
+      </p>
+
+      {gap.causes.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {gap.causes.map((cause) => (
+            <li key={cause.classification} className="text-[11px] text-amber-950">
+              <span className="font-medium tabular-nums">
+                {money(cause.amount, currency)}
+              </span>{" "}
+              across {cause.count} item{cause.count === 1 ? "" : "s"} is {cause.why}.
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {gap.actions.length > 0 && (
+        <>
+          <p className="mt-3 text-xs font-semibold text-amber-950">
+            What a person can clear right now
+          </p>
+          <ul className="mt-1 space-y-1.5">
+            {gap.actions.map((action) => (
+              <li key={action.summary} className="text-[11px] text-amber-950">
+                <span className="font-medium tabular-nums">
+                  {money(action.amount, currency)}
+                </span>{" "}
+                across {action.count} item{action.count === 1 ? "" : "s"} —{" "}
+                {action.summary}.{" "}
+                <span className="italic">{action.remedy}.</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {gap.claim_may_be_wrong && (
+        <p className="mt-3 border-t border-amber-300 pt-2 text-[11px] text-amber-950">
+          <span className="font-semibold">The claim itself may be the problem.</span>{" "}
+          Less than half of it is evidenced. That is consistent with evidence being
+          missing — records not yet connected, a bank statement not uploaded, decisions
+          still open — and equally consistent with the figure being overstated or
+          simply entered wrong. This tool cannot tell those apart, and does not
+          guess: clear the items above, and whatever gap remains is the answer.
+        </p>
+      )}
+    </div>
+  );
 }

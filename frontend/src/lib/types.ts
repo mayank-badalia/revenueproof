@@ -690,6 +690,7 @@ export interface DiligenceRoomData {
     policy_version: string;
   };
   history: ReportVersionRow[];
+  why_the_gap: WhyTheGap;
   items: {
     id: string;
     description: string;
@@ -780,4 +781,23 @@ export interface ContractUploadResult {
   vaulted: number;
   accepted: { filename: string; size_bytes: number; outcome: string }[];
   rejected: { filename: string; reason: string }[];
+}
+
+/** Why the published figure sits below the claim, in causes a person can act on. */
+export interface WhyTheGap {
+  material: boolean;
+  shortfall?: number;
+  claim_may_be_wrong?: boolean;
+  causes: {
+    classification: string;
+    count: number;
+    amount: number;
+    why: string;
+  }[];
+  actions: {
+    summary: string;
+    remedy: string;
+    count: number;
+    amount: number;
+  }[];
 }

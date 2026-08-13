@@ -132,6 +132,7 @@ async def diligence_room(ctx: Workspace_, session: DbSession):
         "position": position,
         "history": history,
         "items": items,
+        "why_the_gap": _explain_gap(items, position),
         "published_count": sum(1 for i in items if i["is_published"]),
         "withheld_count": sum(1 for i in items if not i["is_published"]),
         "caveat": (
@@ -174,3 +175,108 @@ async def version_history(
     """Every published version, newest first."""
     history = await versions.list_versions(session, workspace_id=ctx.workspace_id)
     return {"versions": history[:limit], "total": len(history)}
+
+
+#: What each classification means for the *reader*, when it is the reason a large
+#: share of the claim is not in the headline figure. Written as the sentence a
+#: reviewer would say out loud, not the enum name.
+_GAP_CAUSE: dict[str, str] = {
+    "INVOICED_UNPAID": (
+        "invoiced, with no payment against them yet. An invoice is a claim on cash, "
+        "not proof of it"
+    ),
+    "CONTRACTED_UNPAID": (
+        "under contract but never invoiced. Contracted value is not cash received"
+    ),
+    "REFUNDED_OR_REVERSED": "paid and then returned, so the cash did not stay",
+    "PAYMENT_WITHOUT_SUPPORT": (
+        "money that arrived with no invoice or contract explaining it"
+    ),
+    "HUMAN_REVIEW": (
+        "contradictory enough that the pipeline refused to decide on its own"
+    ),
+    "UNSUPPORTED_CLAIM": "claimed with no evidence found at all",
+}
+
+#: The deterministic checks that most often withhold an otherwise verified figure,
+#: and what a person can actually do about each.
+_WITHHELD_REMEDY: tuple[tuple[str, str, str], ...] = (
+    ("no independent bank credit",
+     "Verified against the processor, but no bank line corroborates it",
+     "Upload the bank statement covering these dates, or confirm in review that the "
+     "processor record is sufficient"),
+    ("anomaly",
+     "An unresolved high-severity anomaly indicator touches these",
+     "Answer the indicator in the anomaly panel — confirming or dismissing it "
+     "releases every figure it blocks"),
+    ("unresolved customer",
+     "The customer behind these could not be resolved with confidence",
+     "Settle the identity question in the review queue"),
+    ("citation",
+     "A contract amount could not be traced back to its page",
+     "Re-read the contract, or confirm the amount in review"),
+)
+
+
+def _explain_gap(items: list[dict], position: dict) -> dict:
+    """Why the published figure is below the claim, in causes a person can act on.
+
+    "Proven ₹0.00 against a claim of ₹1.5 crore" is a true statement that tells a
+    reader nothing about whether the product failed, the evidence is missing, or the
+    claim was wrong. Each is a different next action, and the difference is knowable
+    from the data — so it is stated rather than left to be inferred from a table of
+    fifty rows.
+    """
+    claimed = position.get("claimed_revenue") or 0
+    proven = position.get("verified_recurring", 0) + position.get("verified_one_time", 0)
+    if claimed <= 0 or proven >= claimed:
+        return {"material": False, "causes": [], "actions": []}
+
+    # Where the unproven value sits, by classification, largest first.
+    by_class: dict[str, dict] = {}
+    for item in items:
+        if item["counts_as_verified"] and item["is_published"]:
+            continue
+        cls = item["classification"]
+        entry = by_class.setdefault(cls, {"count": 0, "minor": 0})
+        entry["count"] += 1
+        entry["minor"] += item["gross"]["minor"]
+
+    causes = [
+        {
+            "classification": cls,
+            "count": data["count"],
+            "amount": data["minor"],
+            "why": _GAP_CAUSE.get(cls, "not counted as verified revenue"),
+        }
+        for cls, data in sorted(by_class.items(), key=lambda kv: -kv[1]["minor"])
+        if cls in _GAP_CAUSE
+    ][:4]
+
+    # Verified figures held back by a check a person can clear.
+    withheld = [i for i in items if i["counts_as_verified"] and not i["is_published"]]
+    actions = []
+    for needle, summary, remedy in _WITHHELD_REMEDY:
+        matched = [
+            i for i in withheld
+            if needle in (i.get("withheld_because") or "").lower()
+        ]
+        if matched:
+            actions.append({
+                "summary": summary,
+                "remedy": remedy,
+                "count": len(matched),
+                "amount": sum(i["recognized"]["minor"] for i in matched),
+            })
+    actions.sort(key=lambda a: -a["amount"])
+
+    return {
+        "material": True,
+        "shortfall": claimed - proven,
+        "causes": causes,
+        "actions": actions,
+        # The claim is an input, not a finding. When almost none of it is evidenced,
+        # the most likely explanations include the claim itself being wrong — and a
+        # tool that never says so is implying the evidence must be at fault.
+        "claim_may_be_wrong": proven < claimed // 2,
+    }
