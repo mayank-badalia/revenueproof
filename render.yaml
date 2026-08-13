@@ -20,7 +20,11 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     region: singapore          # closest to an India-facing dataset
-    plan: starter
+    # Free tier: 512 MB, and it sleeps after ~15 minutes idle. Measured peak during
+    # a full verification run is 410 MB, so it fits with ~100 MB of headroom. The
+    # cost is a 30-60s cold start on the first request after a sleep — wake it a
+    # minute before anyone is watching, or move to `starter` ($7/mo) to remove it.
+    plan: free
     healthCheckPath: /health
     autoDeploy: true
     envVars:
@@ -62,11 +66,18 @@ services:
         sync: false
 
       # Optional: a free Neo4j Aura instance turns the graph detectors back on.
+      # Copy all four from the credentials file Aura downloads once, at creation.
+      # NEO4J_DATABASE matters: an Aura instance names its database after the
+      # instance id, not "neo4j", and the default would connect happily and then
+      # find nothing — a graph that is empty because it is the wrong database looks
+      # exactly like a graph that is empty because nothing was written to it.
       - key: NEO4J_URI
         sync: false
       - key: NEO4J_USERNAME
         sync: false
       - key: NEO4J_PASSWORD
+        sync: false
+      - key: NEO4J_DATABASE
         sync: false
 
   # Redis backs the idempotency claims that stop two pipeline runs overlapping on
@@ -82,5 +93,8 @@ databases:
   - name: revenueproof-db
     databaseName: revenueproof
     user: revenueproof
-    plan: basic-256mb
+    # Free Postgres on Render is deleted 30 days after creation. That is fine for a
+    # demonstration and wrong for anything kept; `basic-256mb` ($6/mo) makes it
+    # permanent. Nothing in the app depends on which one is used.
+    plan: free
     region: singapore
