@@ -1,5 +1,10 @@
 # RevenueProof
 
+**Live:** https://revenueproof.vercel.app · **Code:** https://github.com/mayank-badalia/revenueproof
+
+The frontend is deployed. The API runs on a machine and is reached through a tunnel —
+see *Deployment* below for why, and `./scripts/serve-demo.sh` to bring it up.
+
 Checks whether a startup's claimed revenue is supported by evidence.
 
 A founder states a figure. RevenueProof assembles the chain behind it —
