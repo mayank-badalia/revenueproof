@@ -1,0 +1,88 @@
+# RevenueProof local development services.
+# Application code (API, worker, frontend) runs on the host against these services
+# so that backend logs stream straight to the developer's terminal, as Step 1b requires.
+name: revenueproof
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: revenueproof-postgres
+    environment:
+      POSTGRES_USER: revenueproof
+      POSTGRES_PASSWORD: revenueproof
+      POSTGRES_DB: revenueproof
+      # Deterministic collation so ORDER BY on customer names is reproducible across machines.
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-US"
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U revenueproof -d revenueproof"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: revenueproof-redis
+    # appendonly keeps idempotency keys across a restart, which Step 2a category 6 tests.
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "56379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: revenueproof-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/revenueproof
+      NEO4J_server_memory_heap_max__size: 512M
+      NEO4J_server_memory_pagecache_size: 256M
+      # Feature 6 needs weakly/strongly connected components and bounded cycle
+      # enumeration — related-party clusters and circular fund flows. Community
+      # Neo4j ships neither: a bare 5-community image reports zero `gds.` and zero
+      # `apoc.` procedures, so every Rank #1 resource for those sub-features is
+      # unavailable without these plugins. Both are free.
+      NEO4J_PLUGINS: '["graph-data-science","apoc"]'
+      # APOC's cycle and path procedures are not in the default allow-list.
+      NEO4J_dbms_security_procedures_unrestricted: "gds.*,apoc.*"
+      NEO4J_dbms_security_procedures_allowlist: "gds.*,apoc.*"
+    ports:
+      - "57474:7474"   # HTTP browser
+      - "57687:7687"   # Bolt
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  chromadb:
+    image: chromadb/chroma:0.5.23
+    container_name: revenueproof-chromadb
+    ports:
+      - "58000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres_data:
+  redis_data:
+  neo4j_data:
+  chroma_data:

@@ -1,0 +1,65 @@
+[project]
+name = "revenueproof-backend"
+version = "0.1.0"
+description = "RevenueProof — evidence-backed revenue verification for startup due diligence"
+requires-python = ">=3.12,<3.14"
+
+dependencies = [
+    # Web / API
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.17",
+    "websockets>=13",
+    # Validation / settings
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    # Persistence
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14",
+    "psycopg[binary]>=3.2",
+    "redis>=5.2",
+    # Graph
+    "neo4j>=5.26",
+    # Agents / LLM
+    "langgraph>=0.2.50",
+    "langchain-core>=0.3.20",
+    "langchain-groq>=0.2.1",
+    "groq>=0.13",
+    # Finance / matching
+    "ortools>=9.11",
+    "rapidfuzz>=3.10",
+    "pandas>=2.2",
+    "scikit-learn>=1.5",
+    "scipy>=1.14",
+    # Documents
+    "pymupdf>=1.24",
+    "pymupdf4llm>=0.0.17",
+    "pytesseract>=0.3.13",
+    # HTTP clients for connectors
+    "httpx>=0.28",
+    # Security
+    "pyjwt>=2.10",
+    "bcrypt>=4.2",
+    "cryptography>=44",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "hypothesis>=6.119",
+    "httpx>=0.28",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
