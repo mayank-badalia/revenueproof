@@ -23,6 +23,7 @@ import argparse
 import csv
 import io
 import json
+import os
 import re
 import sys
 import time
@@ -34,7 +35,9 @@ from typing import Any
 
 import httpx
 
-BASE = "http://127.0.0.1:8000"
+# Overridable so the same checks can be pointed at a deployed stack. A harness
+# that can only verify localhost cannot tell you whether what you shipped works.
+BASE = os.environ.get("REVENUEPROOF_API", "http://127.0.0.1:8000")
 PASSWORD = "CorrectHorse9!battery"
 
 GREEN, RED, YELLOW, DIM, BOLD, RESET = (
