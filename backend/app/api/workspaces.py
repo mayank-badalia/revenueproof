@@ -193,6 +193,12 @@ async def workspace_summary(ctx: Workspace_, session: DbSession):
         )
         return int(result.scalar_one())
 
+    # Evidence collected, and then what each stage made of it. The second group was
+    # missing, so a caller asking "what did the revenue stage produce?" had nothing to
+    # read and the canvas showed a completed node with an output of zero — which reads
+    # as "it ran and found nothing", the opposite of the truth.
+    from app.models import Allocation, Anomaly, CriticDecision, ReportVersion, RevenueItem
+
     evidence_counts = {
         "raw_records": await count(RawRecord),
         "customers": await count(CustomerEntity),
@@ -201,6 +207,11 @@ async def workspace_summary(ctx: Workspace_, session: DbSession):
         "payments": await count(Payment),
         "refunds": await count(Refund),
         "bank_transactions": await count(BankTransaction),
+        "allocations": await count(Allocation),
+        "revenue_items": await count(RevenueItem),
+        "anomalies": await count(Anomaly),
+        "critic_decisions": await count(CriticDecision),
+        "report_versions": await count(ReportVersion),
     }
 
     connections = [

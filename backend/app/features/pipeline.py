@@ -159,10 +159,38 @@ async def evidence_state(
 
     from app.models import Anomaly, Contract, CustomerEntity, ReportVersion, RevenueItem
 
+    async def count_where(model, *conditions) -> int:
+        return int(
+            (
+                await session.execute(
+                    select(func.count())
+                    .select_from(model)
+                    .where(model.workspace_id == workspace_id, *conditions)
+                )
+            ).scalar_one()
+        )
+
     raw = await count(RawRecord)
+
+    # "Has this stage run?" is not "do rows of its type exist". Ingestion creates a
+    # CustomerEntity for every name it meets and a Contract for every PDF it vaults,
+    # so counting rows reported identity resolution and contract reading as complete
+    # on a workspace where neither had ever run — 19 customers none of which were
+    # resolved, 14 contracts none of which were read. The canvas then showed both
+    # nodes green, which is the one thing this product must never do.
+    #
+    # So each of these asks for the mark the stage itself leaves: resolution sets
+    # `match_confidence`, and extraction replaces the `terms_not_yet_extracted`
+    # placeholder that ingestion wrote (with its own list, or with
+    # `terms_not_extracted` when it failed — either way it ran).
     completed = {
-        "identity": await count(CustomerEntity) > 0,
-        "contracts": await count(Contract) > 0,
+        "identity": await count_where(
+            CustomerEntity, CustomerEntity.match_confidence.is_not(None)
+        ) > 0,
+        "contracts": await count_where(
+            Contract,
+            ~Contract.unknown_fields.contains(["terms_not_yet_extracted"]),
+        ) > 0,
         "reconcile": await count(Payment) > 0
         and await count(__import__("app.models", fromlist=["Allocation"]).Allocation) > 0,
         "revenue": await count(RevenueItem) > 0,
