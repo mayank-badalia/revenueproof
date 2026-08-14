@@ -26,6 +26,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.money import format_money
+from app.features.revenue.position import (
+    published_verified_total,
+    withheld_verified_total,
+)
 from app.models import Anomaly, Contract, RevenueItem, Workspace
 from app.models.enums import RevenueClass
 
@@ -95,11 +99,11 @@ async def build_report(
     for item in items:
         by_class.setdefault(str(item.classification), []).append(item)
 
-    verified = sum(
-        i.recognized_amount
-        for i in items
-        if RevenueClass(i.classification).counts_as_verified
-    )
+    # The same definition the diligence room uses. This summed over *every* item
+    # while the room summed over published ones, so a workspace whose verified
+    # items were all withheld printed INR 4,50,000 here and INR 0.00 on screen.
+    verified = published_verified_total(items)
+    withheld = withheld_verified_total(items)
     unread = sum(
         1 for c in contracts if c.recurring_amount == 0 and c.one_time_amount == 0
     )
@@ -142,10 +146,14 @@ async def build_report(
         for a in anomalies
     )
 
+    # Published and withheld are separate columns rather than one total. Summing
+    # them together reproduced the original defect one table lower down: the
+    # headline said one number and the breakdown beneath it said a larger one.
     summary_rows = "\n".join(
         f"<tr><td>{_esc(CLASS_LABEL.get(RevenueClass(name), name))}</td>"
         f"<td class='num'>{len(group)}</td>"
-        f"<td class='num'>{_esc(_money(sum(i.recognized_amount for i in group), currency))}</td></tr>"
+        f"<td class='num'>{_esc(_money(published_verified_total(group), currency))}</td>"
+        f"<td class='num'>{_esc(_money(withheld_verified_total(group), currency))}</td></tr>"
         for name, group in sorted(by_class.items())
     )
 
@@ -160,6 +168,14 @@ async def build_report(
         item_count=len(items),
         anomaly_count=len(anomalies),
         high_count=sum(1 for a in anomalies if str(a.severity) == "high"),
+        withheld_note=(
+            f"<p class='warn'>A further {_esc(_money(withheld, currency))} classified "
+            f"as verified but is withheld pending review, so it is not in the figure "
+            f"above. It is listed among the classified items below with the reason it "
+            f"has not been published.</p>"
+            if withheld
+            else ""
+        ),
         unread_note=(
             f"<p class='warn'>{unread} of {len(contracts)} contracts have not been "
             f"read, so supported ARR reflects only the contracts already extracted.</p>"
@@ -228,14 +244,16 @@ _TEMPLATE = """<!doctype html>
 
 <div class="cards">
   <div class="card"><div class="k">Claimed revenue</div><div class="v">{claimed}</div></div>
-  <div class="card"><div class="k">Evidence-supported (before review)</div><div class="v ok">{verified}</div></div>
-  <div class="card"><div class="k">Not evidenced</div><div class="v gap">{gap}</div></div>
+  <div class="card"><div class="k">Proven and published</div><div class="v ok">{verified}</div></div>
+  <div class="card"><div class="k">Not yet proven</div><div class="v gap">{gap}</div></div>
   <div class="card"><div class="k">Claimed ARR</div><div class="v">{claimed_arr}</div></div>
 </div>
+{withheld_note}
 {unread_note}
 
 <h2>Revenue by classification</h2>
-<table><thead><tr><th>State</th><th class="num">Items</th><th class="num">Recognised</th></tr></thead>
+<table><thead><tr><th>State</th><th class="num">Items</th><th class="num">Published</th>
+<th class="num">Withheld</th></tr></thead>
 <tbody>{summary_rows}</tbody></table>
 
 <h2>Classified items ({item_count})</h2>

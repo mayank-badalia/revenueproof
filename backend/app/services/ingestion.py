@@ -974,6 +974,16 @@ async def ingest_all(
                 )
                 results[str(source)] = stats.as_dict()
 
+            # Which sources actually served live data? A run where any connector
+            # reached a real account must never have demonstration evidence mixed
+            # into it — see the guard below.
+            live_sources = [
+                name
+                for name, stats_dict in results.items()
+                if not stats_dict.get("is_synthetic", False)
+                and stats_dict.get("canonical_written", 0)
+            ]
+
             if include_bank_sample:
                 from app.connectors.bank_csv import synthetic_csv_bytes
 
@@ -984,7 +994,38 @@ async def ingest_all(
                         ).limit(1)
                     )
                 ).scalar_one_or_none()
-                if existing_bank is None:
+                if existing_bank is not None:
+                    results["bank_csv"] = {
+                        "skipped": "a bank statement is already loaded",
+                        "canonical_written": 0,
+                    }
+                elif live_sources:
+                    # The demonstration statement describes twenty invented companies.
+                    # Seeding it beside a real Zoho ledger put fabricated bank rows
+                    # into a workspace built from a founder's own books — and because
+                    # no live payment can match an invented counterparty, every
+                    # receipt failed MISSING_BANK_CONFIRMATION and the published
+                    # total came out at zero. The wrong number was the smaller harm:
+                    # this product exists to say where a figure came from, and it was
+                    # quietly manufacturing the evidence it then failed to find.
+                    emit(
+                        EventKind.SYSTEM,
+                        f"{len(live_sources)} source(s) returned live data "
+                        f"({', '.join(sorted(live_sources))}), so the demonstration "
+                        "bank statement was NOT loaded — real books must not be mixed "
+                        "with invented evidence. Upload the bank statement covering "
+                        "this period to let receipts reach bank-confirmed status; "
+                        "until then every payment stops at 'verified by the processor'.",
+                        workspace_id=str(workspace_id),
+                        severity=Severity.WARNING,
+                        feature=1,
+                        run_id=run_id,
+                    )
+                    results["bank_csv"] = {
+                        "skipped": "live evidence present; no bank statement connected",
+                        "canonical_written": 0,
+                    }
+                else:
                     bank_stats = await ingest_bank_csv(
                         session,
                         workspace_id=workspace_id,

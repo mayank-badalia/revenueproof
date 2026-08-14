@@ -749,8 +749,13 @@ def _build_waterfall(totals: RevenueTotals) -> list[dict[str, Any]]:
                 ),
             })
 
+    # Named for its basis. This waterfall is the classifier's output, produced
+    # before the critic has ruled on anything, so it is legitimately larger than the
+    # room's published position — but called "Evidence-supported revenue" flat it
+    # read as the headline, and a reader comparing it against the room found two
+    # totals with no way to tell which question each was answering.
     steps.append({
-        "label": "Evidence-supported revenue",
+        "label": "Evidence-supported revenue (before critic review)",
         "amount_minor": totals.total_verified,
         "kind": "total",
     })

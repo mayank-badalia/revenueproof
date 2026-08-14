@@ -18,6 +18,7 @@ from datetime import date
 import httpx
 import pytest
 from httpx import ASGITransport
+from sqlalchemy import select
 
 from app.connectors import bank_csv, normalize
 from app.connectors.synthetic import contracts as synth_contracts
@@ -846,3 +847,71 @@ def test_an_active_roster_does_not_escape_its_block():
     with roster.use_roster(generate_roster("acme-demo")):
         assert roster.get("northstar").zoho_name != "Northstar Tech"
     assert roster.get("northstar").zoho_name == "Northstar Tech"
+
+
+# ---------------------------------------------------------------------------
+# Live evidence is never mixed with demonstration evidence
+# ---------------------------------------------------------------------------
+
+
+async def test_live_sources_do_not_get_a_demonstration_bank_statement(
+    client, workspace_id, monkeypatch
+):
+    """A real ledger must never be handed invented bank rows.
+
+    Regression for the defect that made a connected workspace publish nothing: the
+    built-in demonstration statement was seeded whenever a workspace had no bank
+    rows, including when every other connector had just pulled a founder's real
+    accounts. Its twenty invented counterparties match no live payment, so every
+    receipt failed MISSING_BANK_CONFIRMATION and the headline fell to zero — on a
+    dataset the product had partly manufactured itself.
+    """
+    real = ingestion.IngestionStats()
+    real.fetched = real.normalized = real.canonical_written = 3
+    real.is_synthetic = False
+
+    async def fake_ingest_source(*args, **kwargs):
+        return real
+
+    monkeypatch.setattr(ingestion, "ingest_source", fake_ingest_source)
+
+    async with get_sessionmaker()() as session:
+        result = await ingestion.ingest_all(
+            session, workspace_id=uuid.UUID(workspace_id), include_bank_sample=True
+        )
+
+    assert "skipped" in result["sources"]["bank_csv"]
+    assert result["sources"]["bank_csv"]["canonical_written"] == 0
+
+    async with get_sessionmaker()() as session:
+        rows = (
+            await session.execute(
+                select(BankTransaction).where(
+                    BankTransaction.workspace_id == uuid.UUID(workspace_id)
+                )
+            )
+        ).scalars().all()
+    assert rows == [], "demonstration bank rows were written beside live evidence"
+
+
+async def test_a_fully_synthetic_run_still_gets_its_bank_statement(client, workspace_id):
+    """The guard must not cost the demonstration set its bank evidence."""
+    async with get_sessionmaker()() as session:
+        result = await ingestion.ingest_all(
+            session,
+            workspace_id=uuid.UUID(workspace_id),
+            include_bank_sample=True,
+            force_synthetic=True,
+        )
+
+    assert result["sources"]["bank_csv"]["canonical_written"] > 0
+
+    async with get_sessionmaker()() as session:
+        rows = (
+            await session.execute(
+                select(BankTransaction).where(
+                    BankTransaction.workspace_id == uuid.UUID(workspace_id)
+                )
+            )
+        ).scalars().all()
+    assert rows, "the demonstration set needs its bank statement to prove anything"

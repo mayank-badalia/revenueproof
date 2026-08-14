@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import EventKind, Severity, emit
 from app.core.money import from_minor_units
+from app.features.revenue.position import published_verified, published_verified_total
 from app.models import Anomaly, ReportVersion, RevenueItem, Workspace
 from app.models.enums import RevenueClass, ReviewStatus
 from app.services.audit import record_audit_event
@@ -95,9 +96,7 @@ async def _snapshot(
         )
 
     per_customer: dict[str, int] = {}
-    for item in published:
-        if not RevenueClass(item.classification).counts_as_verified:
-            continue
+    for item in published_verified(items):
         key = str(item.customer_entity_id or "unattributed")
         per_customer[key] = per_customer.get(key, 0) + item.recognized_amount
     verified_total = sum(per_customer.values())
@@ -150,11 +149,7 @@ async def _snapshot(
         "claimed_arr": workspace.claimed_arr if workspace else 0,
         "verified_recurring": total(RevenueClass.VERIFIED_RECURRING),
         "verified_one_time": total(RevenueClass.VERIFIED_ONE_TIME),
-        "cash_received": sum(
-            i.recognized_amount
-            for i in published
-            if RevenueClass(i.classification).counts_as_verified
-        ),
+        "cash_received": published_verified_total(items),
         "contracted_unpaid": total(RevenueClass.CONTRACTED_UNPAID, published_only=False),
         "invoiced_unpaid": total(RevenueClass.INVOICED_UNPAID, published_only=False),
         "refunded_reversed": total(

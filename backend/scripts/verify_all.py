@@ -417,6 +417,26 @@ def main() -> int:
     if R.check("report downloads", rep.status_code == 200, f"{len(rep.content)} bytes"):
         check_report(rep.text, rep.headers.get("content-disposition", ""))
 
+        # The screen and the file must answer "how much is proven" identically.
+        # They did not: the room counted published items and the report counted
+        # every classified one, so a workspace whose verified revenue was all
+        # withheld showed INR 0.00 on screen and INR 4,50,000 in the download.
+        # Nothing caught it, because no check had ever compared the two.
+        from app.core.money import format_money
+
+        position = client.get(
+            f"/api/v1/workspaces/{wid}/room", headers=auth
+        ).json().get("position", {})
+        proven_minor = position.get("cash_received")
+        if proven_minor is not None:
+            currency = position.get("currency", "INR")
+            printed = f"{currency} {format_money(proven_minor, currency)}"
+            R.check(
+                "the room and the downloaded report quote one figure",
+                printed in rep.text,
+                printed,
+            )
+
     ds = client.get("/api/v1/demo-dataset", params={"seed": seed} if seed else {})
     if R.check("dataset downloads", ds.status_code == 200, f"{len(ds.content)} bytes"):
         check_dataset(ds.content, generated=bool(seed))
@@ -463,7 +483,7 @@ def check_report(html: str, disposition: str) -> None:
             disposition[:90])
     R.check("no unrendered placeholder survives",
             not re.search(r"\{[a-z_]+\}", html.split("</style>")[-1]))
-    for section_name in ("Claimed revenue", "Evidence-supported",
+    for section_name in ("Claimed revenue", "Proven and published",
                          "Classified items", "Anomaly indicators"):
         R.check(f"report section: {section_name}", section_name in html)
     R.check("report states it is not investment advice",

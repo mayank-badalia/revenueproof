@@ -481,3 +481,82 @@ async def test_monitoring_status_says_how_a_change_is_confirmed(traceable):
     assert "content hash" in status["note"]
     assert "hint" in status["note"]
     assert status["records_with_newer_versions"] == 0
+
+
+# ---------------------------------------------------------------------------
+# One question, one number
+# ---------------------------------------------------------------------------
+
+
+async def test_the_room_and_the_report_quote_the_same_figure(traceable):
+    """Two screens answering "how much is proven" must not disagree.
+
+    Regression for the defect that produced INR 0.00 in the diligence room and
+    INR 4,50,000 in the downloaded report at the same instant on the same evidence:
+    the room counted published items, the report counted every classified item, and
+    a workspace whose verified revenue was all withheld fell straight into the gap.
+    """
+    from app.features.review import report as report_builder
+
+    ws, _, _ = traceable
+
+    # A verified item carrying real money that the critic has *not* cleared. This is
+    # the shape that separated the two screens; with none present they agreed by
+    # accident and the disagreement never showed up in a test.
+    async with get_sessionmaker()() as session:
+        session.add(
+            RevenueItem(
+                workspace_id=ws,
+                description="INV-9002",
+                currency="INR",
+                gross_amount=450_000,
+                recognized_amount=450_000,
+                classification=RevenueClass.VERIFIED_RECURRING,
+                rule_id="R02",
+                rule_explanation="Verified by the processor; no bank credit confirms it.",
+                is_published=False,
+            )
+        )
+        await session.commit()
+
+    async with get_sessionmaker()() as session:
+        snapshot = await versions._snapshot(session, workspace_id=ws)
+        _, body = await report_builder.build_report(session, workspace_id=ws)
+
+    proven = snapshot["cash_received"]
+    assert proven == 900_000, "only the published item is proven"
+
+    # The report must print that same figure, and must not print the withheld one
+    # as though it were proven.
+    assert "INR 9,000.00" in body
+    assert "INR 13,500.00" not in body, (
+        "the report added a withheld item into the headline; the room did not"
+    )
+
+
+async def test_withheld_revenue_is_reported_rather_than_dropped(traceable):
+    """Agreeing by hiding the difference would be its own failure."""
+    from app.features.review import report as report_builder
+
+    ws, _, _ = traceable
+    async with get_sessionmaker()() as session:
+        session.add(
+            RevenueItem(
+                workspace_id=ws,
+                description="INV-9003",
+                currency="INR",
+                gross_amount=450_000,
+                recognized_amount=450_000,
+                classification=RevenueClass.VERIFIED_RECURRING,
+                rule_id="R02",
+                rule_explanation="Verified by the processor; no bank credit confirms it.",
+                is_published=False,
+            )
+        )
+        await session.commit()
+
+    async with get_sessionmaker()() as session:
+        _, body = await report_builder.build_report(session, workspace_id=ws)
+
+    assert "withheld pending review" in body
+    assert "INR 4,500.00" in body, "the withheld amount must still be stated"

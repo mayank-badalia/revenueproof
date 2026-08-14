@@ -293,7 +293,10 @@ async def test_report_states_the_claim_beside_the_evidence(workspace_with_queue)
             session, workspace_id=workspace_with_queue
         )
     assert filename.endswith(".html")
-    assert "Claimed revenue" in body and "Evidence-supported" in body
+    # The report headline now carries the same wording as the diligence room, so a
+    # reader moving between the screen and the file is looking at one figure under
+    # one name rather than two definitions that happened to agree.
+    assert "Claimed revenue" in body and "Proven and published" in body
     assert "F7 Queue" in body
 
 

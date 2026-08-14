@@ -69,7 +69,7 @@ const OPTIONS: {
     summary: "Razorpay, Zoho Books, HubSpot and Google Drive.",
     action: "Pull from connected accounts",
     running: "Collecting…",
-    note: "Read access is enough for all four; the app never writes to your systems. Tokens are encrypted before storage and are never included in any prompt sent to the language model.",
+    note: "Read access is enough for all four; the app never writes to your systems. Tokens are encrypted before storage and are never included in any prompt sent to the language model. None of the four is a bank, so no demonstration statement is mixed in and receipts stop at “verified by the processor” until you upload the bank statement covering this period — that upload is what lets a figure become bank-confirmed.",
   },
 ];
 
@@ -109,7 +109,14 @@ export function DataSourcePanel({
   const liveCount = Math.max(reachable.length, connectedNow.length);
   const canGoLive = liveCount > 0;
 
-  const [mode, setMode] = useState<Mode>(canGoLive ? "live" : "template");
+  // The demonstration set is the default even where live accounts are reachable.
+  // Defaulting to "live" meant the first button a visitor pressed pulled four real
+  // accounts that have no bank feed between them — and with no bank statement no
+  // receipt can be corroborated, so the headline came out at zero on a product
+  // whose entire job is to produce that number. The demonstration set is coherent
+  // across all five sources, so it proves what the tool does; reaching a real
+  // account is a deliberate second step, and says plainly what it still needs.
+  const [mode, setMode] = useState<Mode>("template");
   const [seed, setSeed] = useState("acme-demo");
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState<IngestionRun | null>(null);
