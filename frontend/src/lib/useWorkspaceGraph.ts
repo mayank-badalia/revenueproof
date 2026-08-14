@@ -357,6 +357,7 @@ export function useWorkspaceGraph(workspaceId: string) {
       refresh,
       addNode,
       removeNode,
+      removedKeys: removed,
       undoLast,
       canUndo: undoStack.length > 0,
       nextUndoLabel: undoStack.at(-1)?.label ?? null,

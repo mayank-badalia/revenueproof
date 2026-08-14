@@ -34,6 +34,13 @@ export function ReviewDecisions({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* Settling a question does not by itself move a published figure: `is_published` is
+     written only by the critic (review/verify.py), and the indicators a decision has
+     just cleared are read on its next run. Without saying so, a reviewer answers five
+     questions, watches the headline sit still, and concludes the app is broken. */
+  const [settled, setSettled] = useState(0);
+  const [applying, setApplying] = useState(false);
+  const [applied, setApplied] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -59,6 +66,8 @@ export function ReviewDecisions({
       await api.resolveReview(workspaceId, itemId, decision, reason.trim());
       setOpenId(null);
       setReason("");
+      setSettled((n) => n + 1);
+      setApplied(null);
       await load();
       onResolved();
     } catch (err) {
@@ -68,21 +77,73 @@ export function ReviewDecisions({
     }
   }
 
+  /** Re-run the two stages a settled decision can actually change. */
+  async function applyDecisions() {
+    setApplying(true);
+    setError(null);
+    try {
+      const run = await api.runPipeline(workspaceId, ["critic", "publish"]);
+      setApplied(
+        run.blocked
+          ? (run.remedy ?? run.blocked)
+          : `Re-checked in ${Math.round(run.seconds)}s. The published position now reflects your decisions.`,
+      );
+      setSettled(0);
+      await load();
+      onResolved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not re-run the critic");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  const applyBar =
+    settled > 0 || applied ? (
+      <div className="mb-2.5">
+        {applied ? (
+          <Banner tone="success">{applied}</Banner>
+        ) : (
+          <div className="rounded-[7px] bg-amber-soft px-3 py-2 ring-1 ring-amber/20">
+            <p className="text-[11.5px] leading-relaxed text-amber">
+              {settled} decision{settled === 1 ? "" : "s"} settled. Publication is decided
+              by the critic, so the figures these were blocking are released on its next
+              run — nothing above has moved yet.
+            </p>
+            <Button
+              variant="primary"
+              size="sm"
+              className="mt-1.5 w-full"
+              disabled={applying}
+              onClick={() => void applyDecisions()}
+              icon={applying ? <Spinner /> : undefined}
+            >
+              {applying ? "Re-checking…" : "Re-run the critic and publish"}
+            </Button>
+          </div>
+        )}
+      </div>
+    ) : null;
+
   if (items === null) return <Spinner className="text-ink-3" />;
 
   if (items.length === 0) {
     return (
-      <div className="rounded-[8px] border border-dashed border-line px-4 py-8 text-center">
-        <p className="text-[12.5px] font-medium text-emerald">Nothing waiting</p>
-        <p className="mt-1 text-[11.5px] text-ink-2">
-          Every question the agents raised has been settled.
-        </p>
+      <div>
+        {applyBar}
+        <div className="rounded-[8px] border border-dashed border-line px-4 py-8 text-center">
+          <p className="text-[12.5px] font-medium text-emerald">Nothing waiting</p>
+          <p className="mt-1 text-[11.5px] text-ink-2">
+            Every question the agents raised has been settled.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <div>
+      {applyBar}
       <Eyebrow>
         {items.length} open {items.length === 1 ? "decision" : "decisions"}
       </Eyebrow>

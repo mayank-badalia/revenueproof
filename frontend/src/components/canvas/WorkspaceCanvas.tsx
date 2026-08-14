@@ -354,6 +354,21 @@ export function WorkspaceCanvas({
     });
   }, [graph.nodes, buildData, setFlowNodes, saved]);
 
+  /*
+   * While the scissors are up, nothing drags.
+   *
+   * React Flow reads a press-and-move as a drag rather than a click, so a cut aimed at
+   * a node that moved two pixels under the cursor silently repositioned it instead —
+   * which reads exactly like the cut tool not working.
+   */
+  useEffect(() => {
+    setFlowNodes((current) =>
+      current.map((node) =>
+        node.draggable === !cutting ? node : { ...node, draggable: !cutting },
+      ),
+    );
+  }, [cutting, setFlowNodes]);
+
   /** Where a reviewer put a node is a decision about how they read this graph. */
   const persistPositions = useCallback(
     (nodes: { id: string; position: { x: number; y: number } }[]) => {
@@ -448,6 +463,20 @@ export function WorkspaceCanvas({
             <Button onClick={() => setShowAdd((v) => !v)} icon={<PlusIcon />}>
               Add node
             </Button>
+            {showAdd && (
+              <div className="absolute left-0 top-full z-30 mt-1.5">
+                <AddNodePanel
+                  present={graph.presentKeys}
+                  removed={graph.removedKeys}
+                  onAdd={(key) => {
+                    const refusal = graph.addNode(key);
+                    if (!refusal) setSelected(key);
+                    return refusal;
+                  }}
+                  onClose={() => setShowAdd(false)}
+                />
+              </div>
+            )}
           </div>
 
           <Button
@@ -460,29 +489,17 @@ export function WorkspaceCanvas({
           </Button>
 
           {graph.canUndo && (
-            <Button onClick={() => {
-              const label = graph.undoLast();
-              if (label) setToast({ tone: "success", text: `Undone — ${label.toLowerCase()}` });
-            }} icon={<UndoIcon />} title="Undo (⌘Z)">
+            <Button
+              onClick={() => {
+                const label = graph.undoLast();
+                if (label) setToast({ tone: "success", text: `Undone — ${label.toLowerCase()}` });
+              }}
+              icon={<UndoIcon />}
+              title="Undo (⌘Z)"
+            >
               Undo
             </Button>
           )}
-
-          <div className="hidden">
-            {showAdd && (
-              <div className="absolute left-0 top-full z-30 mt-1.5">
-                <AddNodePanel
-                  present={graph.presentKeys}
-                  onAdd={(key) => {
-                    const refusal = graph.addNode(key);
-                    if (!refusal) setSelected(key);
-                    return refusal;
-                  }}
-                  onClose={() => setShowAdd(false)}
-                />
-              </div>
-            )}
-          </div>
 
           <div className="ml-auto flex items-center gap-2">
             {startedAt !== null && (

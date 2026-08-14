@@ -14,12 +14,29 @@ import { useState } from "react";
 import { GROUP_LABEL, NODES, type NodeDef, type NodeKey } from "@/lib/graph";
 import { CheckIcon, LockIcon } from "@/components/ui/primitives";
 
+function RestoreIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M2.8 6.4h6.6a3.6 3.6 0 0 1 0 7.2H6M2.8 6.4l3-3M2.8 6.4l3 3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function AddNodePanel({
   present,
+  removed,
   onAdd,
   onClose,
 }: {
   present: Set<NodeKey>;
+  /** Cut off the canvas. Offered back first, because that is why the panel is open. */
+  removed: Set<NodeKey>;
   onAdd: (key: NodeKey) => string | null;
   onClose: () => void;
 }) {
@@ -54,6 +71,46 @@ export function AddNodePanel({
       </header>
 
       <div className="max-h-[420px] overflow-y-auto scroll-thin pb-1.5">
+        {removed.size > 0 && (
+          <div className="border-b border-line-2 pb-1.5">
+            <div className="flex items-center justify-between px-3.5 pb-1 pt-2.5">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.09em] text-amber">
+                Cut from this canvas
+              </span>
+              <button
+                onClick={() => {
+                  for (const key of removed) onAdd(key);
+                  onClose();
+                }}
+                className="text-[10.5px] font-medium text-cobalt hover:underline"
+              >
+                Put all back
+              </button>
+            </div>
+            {NODES.filter((def) => removed.has(def.key)).map((def) => (
+              <button
+                key={def.key}
+                onClick={() => attempt(def)}
+                className="flex w-full items-start gap-2.5 px-3.5 py-[7px] text-left transition-colors hover:bg-amber-soft"
+              >
+                <span className="mt-[2px] font-mono text-[10px] font-semibold tabular-nums text-ink-3">
+                  {def.ord}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12.5px] font-medium text-ink">
+                    {def.title}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] text-amber">
+                    Put it back — its output was kept
+                  </span>
+                </span>
+                <span className="mt-[3px] text-cobalt">
+                  <RestoreIcon />
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         {groups.map(({ group, items }) => (
           <div key={group}>
             <div className="px-3.5 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-[0.09em] text-ink-3">
