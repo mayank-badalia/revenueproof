@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { API_BASE, api } from "@/lib/api";
+import { loadLayout, saveLayout } from "@/lib/canvasStore";
 import {
   NODES,
   NODE_BY_KEY,
@@ -105,7 +106,37 @@ export function useWorkspaceGraph(workspaceId: string) {
      next refresh, because presence is derived from whether the stage has run — and
      running it is exactly what made it worth removing. Re-adding clears the entry,
      which is what stopped "already added" from being permanent. */
-  const [removed, setRemoved] = useState<Set<NodeKey>>(new Set());
+  const [removed, setRemoved] = useState<Set<NodeKey>>(
+    () => new Set(loadLayout(workspaceId).removed),
+  );
+
+  /* Every reversible canvas action, newest last. Deleting a node is easy to do by
+     accident and expensive to redo by hand, so it has to be undoable — and undo has
+     to survive the refresh that follows it. */
+  const [undoStack, setUndoStack] = useState<{ label: string; undo: () => void }[]>([]);
+
+  const pushUndo = useCallback((label: string, undo: () => void) => {
+    setUndoStack((prev) => [...prev, { label, undo }].slice(-25));
+  }, []);
+
+  const undoLast = useCallback((): string | null => {
+    let label: string | null = null;
+    setUndoStack((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      label = last.label;
+      last.undo();
+      return prev.slice(0, -1);
+    });
+    return label;
+  }, []);
+
+  /* The removed set is a view preference, so it is written where the reviewer's other
+     view preferences live and read back on the next visit. */
+  useEffect(() => {
+    const existing = loadLayout(workspaceId);
+    saveLayout(workspaceId, { ...existing, removed: [...removed] });
+  }, [workspaceId, removed]);
   const [running, setRunning] = useState<Set<NodeKey>>(new Set());
   const [failed, setFailed] = useState<Record<string, string>>({});
   const [durations, setDurations] = useState<Record<string, number>>({});
@@ -233,16 +264,28 @@ export function useWorkspaceGraph(workspaceId: string) {
    * exactly where they are, and re-adding the node shows them again. Nothing a
    * verification produced is deleted by rearranging the picture of it.
    */
-  const removeNode = useCallback((key: NodeKey) => {
-    if (key === "evidence") return "Load Evidence is the required starting point";
-    setAdded((prev) => {
-      const next = new Set(prev);
-      next.delete(key);
-      return next;
-    });
-    setRemoved((prev) => new Set(prev).add(key));
-    return null;
-  }, []);
+  const removeNode = useCallback(
+    (key: NodeKey) => {
+      if (key === "evidence") return "Load Evidence is the required starting point";
+      const wasAdded = added.has(key);
+      setAdded((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+      setRemoved((prev) => new Set(prev).add(key));
+      pushUndo(`Removed ${NODE_BY_KEY[key].title}`, () => {
+        setRemoved((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+        if (wasAdded) setAdded((prev) => new Set(prev).add(key));
+      });
+      return null;
+    },
+    [added, pushUndo],
+  );
 
   const markRunning = useCallback((keys: NodeKey[], on: boolean) => {
     setRunning((prev) => {
@@ -314,6 +357,10 @@ export function useWorkspaceGraph(workspaceId: string) {
       refresh,
       addNode,
       removeNode,
+      undoLast,
+      canUndo: undoStack.length > 0,
+      nextUndoLabel: undoStack.at(-1)?.label ?? null,
+      pushUndo,
       markRunning,
       markStaleDownstream,
       clearStale,
@@ -333,6 +380,9 @@ export function useWorkspaceGraph(workspaceId: string) {
       refresh,
       addNode,
       removeNode,
+      undoLast,
+      undoStack,
+      pushUndo,
       markRunning,
       markStaleDownstream,
       clearStale,

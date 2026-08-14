@@ -33,6 +33,8 @@ import {
   type NodeStatus,
 } from "@/lib/graph";
 import { FEATURE_TO_NODE, useTrace, useWorkspaceGraph } from "@/lib/useWorkspaceGraph";
+import { loadLayout, saveLayout } from "@/lib/canvasStore";
+import { RunPreflight } from "./RunPreflight";
 import { elapsedClock } from "@/lib/format";
 import { Banner, Button, PlayIcon, Spinner } from "@/components/ui/primitives";
 import { AddNodePanel } from "./AddNodePanel";
@@ -88,6 +90,12 @@ export function WorkspaceCanvas({
     null,
   );
   const [runningAll, setRunningAll] = useState(false);
+  const [cutting, setCutting] = useState(false);
+  const [preflight, setPreflight] = useState<null | {
+    required: NodeKey[];
+    recommended: NodeKey[];
+    disconnected: { key: NodeKey; needs: NodeKey[] }[];
+  }>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [clock, setClock] = useState(0);
 
@@ -107,11 +115,26 @@ export function WorkspaceCanvas({
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const openNode = useCallback((key: NodeKey) => {
-    setSelected(key);
-    setShowAdd(false);
-    if (key === "evidence") setShowSources(true);
-  }, []);
+  const openNode = useCallback(
+    (key: NodeKey) => {
+      // With the scissors up, a click cuts rather than opens. Cutting stays on so a
+      // reviewer can remove several without going back to the toolbar each time.
+      if (cutting) {
+        const refusal = graph.removeNode(key);
+        setToast(
+          refusal
+            ? { tone: "warn", text: refusal }
+            : { tone: "success", text: `Cut ${NODE_BY_KEY[key].title} — ⌘Z to undo` },
+        );
+        if (!refusal && selected === key) setSelected(null);
+        return;
+      }
+      setSelected(key);
+      setShowAdd(false);
+      if (key === "evidence") setShowSources(true);
+    },
+    [cutting, graph, selected],
+  );
 
   /** Run one node. The backend decides whether it may. */
   const runNode = useCallback(
@@ -170,22 +193,25 @@ export function WorkspaceCanvas({
   );
 
   /** Run everything. Missing nodes appear on the canvas as the backend reports them. */
-  const runAll = useCallback(async () => {
-    if (!graph.hasEvidence) {
-      setToast({ tone: "warn", text: "Load evidence first — there is nothing to verify." });
-      setSelected("evidence");
-      setShowSources(true);
-      return;
-    }
+  /** Actually start the chain. `runAll` checks the canvas first and calls this. */
+  const startRun = useCallback(async () => {
+    setPreflight(null);
     setRunningAll(true);
     setStartedAt(Date.now());
     // Every node the chain will touch joins the canvas up front, so the graph builds
     // itself in view rather than appearing all at once when the run returns.
-    const stageKeys = NODES.filter((n) => n.stage).map((n) => n.key);
-    graph.setAdded((prev) => new Set([...prev, ...stageKeys]));
+    const stageKeys = NODES.filter((n) => n.stage && graph.presentKeys.has(n.key)).map(
+      (n) => n.key,
+    );
     graph.markRunning(stageKeys, true);
     try {
-      const result = await api.runPipeline(workspaceId);
+      const stages = NODES.filter(
+        (n) => n.stage && graph.presentKeys.has(n.key),
+      ).map((n) => n.stage!);
+      const result = await api.runPipeline(
+        workspaceId,
+        stages.length === NODES.filter((n) => n.stage).length ? undefined : stages,
+      );
       if (result.blocked) {
         setToast({ tone: "warn", text: result.remedy ?? result.blocked });
       } else {
@@ -220,6 +246,36 @@ export function WorkspaceCanvas({
       await graph.refresh();
     }
   }, [graph, workspaceId]);
+
+  /**
+   * Check the canvas before running. A removed node is a real choice, but pressing Run
+   * afterwards must not quietly return a weaker answer that looks like a strong one.
+   */
+  const runAll = useCallback(() => {
+    if (!graph.hasEvidence) {
+      setToast({ tone: "warn", text: "Load evidence first — there is nothing to verify." });
+      setSelected("evidence");
+      setShowSources(true);
+      return;
+    }
+    const missing = NODES.filter((n) => !graph.presentKeys.has(n.key));
+    const required = missing.filter((n) => n.importance === "required").map((n) => n.key);
+    const recommended = missing
+      .filter((n) => n.importance === "recommended" && n.key !== "review")
+      .map((n) => n.key);
+    const disconnected = NODES.filter((n) => graph.presentKeys.has(n.key))
+      .map((n) => ({
+        key: n.key,
+        needs: n.needs.filter((need) => !graph.presentKeys.has(need)),
+      }))
+      .filter((n) => n.needs.length > 0);
+
+    if (required.length || recommended.length || disconnected.length) {
+      setPreflight({ required, recommended, disconnected });
+      return;
+    }
+    void startRun();
+  }, [graph, startRun]);
 
   const download = useCallback(
     async (key: NodeKey) => {
@@ -276,6 +332,8 @@ export function WorkspaceCanvas({
     [],
   );
 
+  const saved = useMemo(() => loadLayout(workspaceId), [workspaceId]);
+
   useEffect(() => {
     setFlowNodes((current) => {
       const existing = new Map(current.map((node) => [node.id, node]));
@@ -286,14 +344,43 @@ export function WorkspaceCanvas({
         return {
           id: def.key,
           type: "verification",
-          // A fresh object, so nothing downstream can mutate the shared layout.
-          position: { ...LAYOUT[def.key] },
+          // A saved arrangement wins over the default one, and both are cloned so
+          // nothing downstream can mutate the shared layout constants.
+          position: { ...(saved.positions[def.key] ?? LAYOUT[def.key]) },
           draggable: true,
           data,
         };
       });
     });
-  }, [graph.nodes, buildData, setFlowNodes]);
+  }, [graph.nodes, buildData, setFlowNodes, saved]);
+
+  /** Where a reviewer put a node is a decision about how they read this graph. */
+  const persistPositions = useCallback(
+    (nodes: { id: string; position: { x: number; y: number } }[]) => {
+      const existing = loadLayout(workspaceId);
+      const positions = { ...existing.positions };
+      for (const node of nodes) positions[node.id as NodeKey] = { ...node.position };
+      saveLayout(workspaceId, { ...existing, positions });
+    },
+    [workspaceId],
+  );
+
+  /* Undo. Deleting a node is one keystroke and rebuilding the arrangement by hand is
+     many, so the shortcut everyone already has in their fingers has to work. */
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        const label = graph.undoLast();
+        if (label) setToast({ tone: "success", text: `Undone — ${label.toLowerCase()}` });
+      }
+      if (event.key === "Escape") setCutting(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [graph]);
 
   const flowEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [];
@@ -361,6 +448,27 @@ export function WorkspaceCanvas({
             <Button onClick={() => setShowAdd((v) => !v)} icon={<PlusIcon />}>
               Add node
             </Button>
+          </div>
+
+          <Button
+            onClick={() => setCutting((v) => !v)}
+            icon={<ScissorsIcon />}
+            className={cutting ? "!bg-rust !text-white ring-0" : ""}
+            title="Cut a node off the canvas — click a node while this is on. Esc to stop."
+          >
+            {cutting ? "Cutting — click a node" : "Cut"}
+          </Button>
+
+          {graph.canUndo && (
+            <Button onClick={() => {
+              const label = graph.undoLast();
+              if (label) setToast({ tone: "success", text: `Undone — ${label.toLowerCase()}` });
+            }} icon={<UndoIcon />} title="Undo (⌘Z)">
+              Undo
+            </Button>
+          )}
+
+          <div className="hidden">
             {showAdd && (
               <div className="absolute left-0 top-full z-30 mt-1.5">
                 <AddNodePanel
@@ -393,7 +501,7 @@ export function WorkspaceCanvas({
             </Button>
             <Button
               variant="primary"
-              onClick={() => void runAll()}
+              onClick={runAll}
               disabled={runningAll}
               icon={runningAll ? <Spinner /> : <PlayIcon />}
             >
@@ -419,12 +527,16 @@ export function WorkspaceCanvas({
         )}
 
         {/* --- the canvas ---------------------------------------------------- */}
-        <div className="relative min-h-0 flex-1" ref={evidenceAnchor}>
+        <div
+          className={`relative min-h-0 flex-1 ${cutting ? "canvas-cutting" : ""}`}
+          ref={evidenceAnchor}
+        >
           <ReactFlowProvider>
             <ReactFlow
               nodes={flowNodes}
               edges={flowEdges}
               onNodesChange={onNodesChange}
+              onNodeDragStop={(_, __, dragged) => persistPositions(dragged)}
               onNodesDelete={(deleted) => {
                 for (const node of deleted) {
                   const refusal = graph.removeNode(node.id as NodeKey);
@@ -504,6 +616,27 @@ export function WorkspaceCanvas({
         />
       </div>
 
+      {preflight && (
+        <RunPreflight
+          missingRequired={preflight.required}
+          missingRecommended={preflight.recommended}
+          disconnected={preflight.disconnected}
+          onCancel={() => setPreflight(null)}
+          onRunAnyway={() => void startRun()}
+          onAddAndRun={() => {
+            const restore = [
+              ...preflight.required,
+              ...preflight.recommended,
+              ...preflight.disconnected.flatMap((d) => d.needs),
+            ];
+            for (const key of restore) graph.addNode(key);
+            setPreflight(null);
+            // Let the newly added nodes reach state before the run reads presence.
+            window.setTimeout(() => void startRun(), 60);
+          }}
+        />
+      )}
+
       {selectedState && (
         <Inspector
           key={selectedState.key}
@@ -541,6 +674,30 @@ function DownloadAllIcon() {
     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
       <path
         d="M8 1.8v7.6m0 0 2.8-2.8M8 9.4 5.2 6.6M2.4 11.4v1.6c0 .6.5 1.1 1.1 1.1h9c.6 0 1.1-.5 1.1-1.1v-1.6"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ScissorsIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="3.6" cy="12.2" r="2" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="12.4" cy="12.2" r="2" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M4.9 10.9 12.4 2M11.1 10.9 3.6 2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function UndoIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M2.8 6.4h6.6a3.6 3.6 0 0 1 0 7.2H6M2.8 6.4l3-3M2.8 6.4l3 3"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"

@@ -172,3 +172,14 @@ input[type="text"].tnum {
   border: 2px solid transparent;
   background-clip: content-box;
 }
+
+/* Cut mode. The cursor is the affordance: a scissors over the canvas says what a
+   click will do more directly than any label beside the button. */
+.canvas-cutting,
+.canvas-cutting .react-flow__pane,
+.canvas-cutting .react-flow__node {
+  cursor:
+    url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 16 16' fill='none' stroke='%23b42318' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='3.6' cy='12.2' r='2'/%3E%3Ccircle cx='12.4' cy='12.2' r='2'/%3E%3Cpath d='M4.9 10.9 12.4 2M11.1 10.9 3.6 2'/%3E%3C/svg%3E")
+      4 4,
+    crosshair;
+}

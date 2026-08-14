@@ -46,6 +46,14 @@ export interface NodeDef {
   group: "evidence" | "verification" | "controls" | "output";
   /** What travels along the edge out of this node. */
   emits: string;
+  /**
+   * `required` — the chain cannot produce a figure without it, and the backend will
+   * refuse the stages beneath it. `recommended` — the run completes without it, but
+   * the result is weaker in a way worth naming before someone accepts it.
+   */
+  importance: "required" | "recommended";
+  /** What is lost by running without it. Shown when a reviewer skips it. */
+  costOfSkipping?: string;
 }
 
 export const NODES: NodeDef[] = [
@@ -61,6 +69,7 @@ export const NODES: NodeDef[] = [
     stage: null,
     group: "evidence",
     emits: "Evidence packages",
+    importance: "required",
   },
   {
     key: "identity",
@@ -74,6 +83,7 @@ export const NODES: NodeDef[] = [
     stage: "identity",
     group: "verification",
     emits: "Resolved entities",
+    importance: "required",
   },
   {
     key: "contracts",
@@ -87,6 +97,9 @@ export const NODES: NodeDef[] = [
     stage: "contracts",
     group: "verification",
     emits: "Extracted terms",
+    importance: "recommended",
+    costOfSkipping:
+      "Nothing can be classified as recurring, so supported ARR reads as zero and a one-time fee sold as a subscription goes uncaught.",
   },
   {
     key: "reconcile",
@@ -100,6 +113,7 @@ export const NODES: NodeDef[] = [
     stage: "reconcile",
     group: "verification",
     emits: "Reconciled cash",
+    importance: "required",
   },
   {
     key: "revenue",
@@ -113,6 +127,7 @@ export const NODES: NodeDef[] = [
     stage: "revenue",
     group: "verification",
     emits: "Verified revenue",
+    importance: "required",
   },
   {
     key: "anomalies",
@@ -126,6 +141,9 @@ export const NODES: NodeDef[] = [
     stage: "anomalies",
     group: "controls",
     emits: "Indicators",
+    importance: "recommended",
+    costOfSkipping:
+      "Duplicate payments, circular flows and related parties are not looked for, and the critic loses the indicators it uses to withhold a figure.",
   },
   {
     key: "critic",
@@ -139,6 +157,7 @@ export const NODES: NodeDef[] = [
     stage: "critic",
     group: "controls",
     emits: "Verdicts",
+    importance: "required",
   },
   {
     key: "review",
@@ -152,6 +171,9 @@ export const NODES: NodeDef[] = [
     stage: null,
     group: "controls",
     emits: "Review outcomes",
+    importance: "recommended",
+    costOfSkipping:
+      "Nothing is settled by a person, so anything the agents could not agree on stays withheld.",
   },
   {
     key: "publish",
@@ -165,6 +187,9 @@ export const NODES: NodeDef[] = [
     stage: "publish",
     group: "output",
     emits: "Published version",
+    importance: "recommended",
+    costOfSkipping:
+      "The position is not frozen, so there is nothing to compare the next run against.",
   },
 ];
 
