@@ -99,7 +99,7 @@ export function Dashboard({
   return (
     <div className="h-full overflow-y-auto scroll-thin">
       <div className="mx-auto max-w-[1160px] px-8 py-9">
-        <div className="flex items-start justify-between gap-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
           <div>
             <h1 className="text-[27px] font-semibold tracking-[-0.02em] text-ink">
               {greeting}
@@ -135,7 +135,7 @@ export function Dashboard({
             {loading && <Spinner className="text-ink-3" />}
           </div>
 
-          <Card className="overflow-hidden">
+          <Card className="overflow-x-auto">
             {workspaces.length === 0 ? (
               <div className="px-6 py-14 text-center">
                 <p className="text-[14px] font-medium text-ink">No workspaces yet</p>
@@ -150,7 +150,7 @@ export function Dashboard({
                 </div>
               </div>
             ) : (
-              <table className="w-full border-collapse text-left">
+              <table className="w-full min-w-[720px] border-collapse text-left">
                 <thead>
                   <tr className="border-b border-line bg-slate-soft/60">
                     {["Company", "Period", "Claim", "Proven", "Open", "Created"].map((h, i) => (
@@ -191,10 +191,10 @@ export function Dashboard({
                             </span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-[12.5px] text-ink-2">
+                        <td className="whitespace-nowrap px-4 py-3 text-[12.5px] text-ink-2">
                           {ws.reporting_period_start} → {ws.reporting_period_end}
                         </td>
-                        <td className="px-4 py-3 text-right font-mono tnum text-[13px] text-ink">
+                        <td className="whitespace-nowrap px-4 py-3 text-right font-mono tnum text-[13px] text-ink">
                           {ws.claimed_revenue.display}
                         </td>
                         <td className="px-4 py-3 text-right">

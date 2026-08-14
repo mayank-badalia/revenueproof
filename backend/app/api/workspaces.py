@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import func, select
@@ -378,3 +380,37 @@ async def add_member(
     )
     await session.commit()
     return {"email": user.email, "role": role}
+
+
+@router.get("/workspaces/{workspace_id}/overview")
+async def workspace_overview(ctx: Workspace_, session: DbSession):
+    """Everything the canvas needs, in one request instead of three.
+
+    The canvas opened by asking for the pipeline state, the workspace summary and the
+    review queue separately. On a local backend that is three cheap queries; through
+    the tunnel a deployed frontend uses it costs three round trips of roughly a second
+    and a half each, and the graph sits empty for the duration.
+
+    Nothing here is new work — it is the same three functions, awaited together and
+    returned as one payload.
+    """
+    from app.features import pipeline as pipeline_feature
+    from app.features.review import service as review_service
+
+    state, queue_summary, items = await asyncio.gather(
+        pipeline_feature.evidence_state(session, workspace_id=ctx.workspace_id),
+        review_service.summarise(session, workspace_id=ctx.workspace_id),
+        review_service.list_items(session, workspace_id=ctx.workspace_id),
+    )
+    summary = await workspace_summary(ctx, session)
+    return {
+        "summary": summary,
+        "pipeline": state,
+        # The same shape `/review` returns, so one caller can read either.
+        "review": {
+            "summary": queue_summary.as_dict(),
+            "items": items,
+            "decisions": list(review_service.DECISIONS),
+            "can_resolve": ctx.can_resolve,
+        },
+    }

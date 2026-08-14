@@ -112,6 +112,14 @@ def looks_one_time(text: str | None) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _as_datetime(value: date | None) -> datetime | None:
+    """A ledger records the day, not the second. Anchor it at midnight UTC so the
+    reconciliation window compares like with like rather than local-midnight drift."""
+    if value is None:
+        return None
+    return datetime(value.year, value.month, value.day, tzinfo=UTC)
+
+
 def _parse_date(value: Any, field: str) -> date | None:
     if value in (None, "", "0000-00-00"):
         return None
@@ -376,6 +384,63 @@ def zoho_invoice(payload: dict[str, Any]) -> CanonicalInvoice:
         reference=_text(payload.get("reference_number")),
         notes=_text(payload.get("notes"), 2000),
         unknown_fields=[f for f in ("due_date", "reference_number") if not payload.get(f)],
+    )
+
+
+def zoho_payment(payload: dict[str, Any]) -> CanonicalPayment:
+    """A customer payment recorded in the accounting system.
+
+    The connector has always fetched these — `providers.py` lists `customerpayments`
+    beside contacts, invoices and credit notes — but nothing was registered to read
+    them, so every one was counted in `skipped_no_normalizer` and dropped. On a live
+    organisation that is most of the cash: 45 payments against 55 invoices went in the
+    bin, and the workspace concluded the company had collected 7.5% of what it billed.
+
+    A payment here is not a processor event: there is no gateway fee, no capture, no
+    settlement. It is the ledger's own record that money arrived, which is exactly the
+    evidence Feature 4 needs to close an invoice.
+    """
+    source_id = _text(payload.get("payment_id"))
+    if not source_id:
+        raise NormalizationError("zoho payment is missing its `payment_id`")
+
+    currency = _currency(payload, "currency_code")
+    amount = _money(payload.get("amount"), currency, "amount")
+
+    # Which invoices this payment settles. Zoho gives the applied amount per invoice;
+    # a payment against exactly one invoice can name it, which is the strongest
+    # reference Feature 4 can match on.
+    applied = payload.get("invoices") or []
+    invoice_source_id = (
+        _text(applied[0].get("invoice_id")) if len(applied) == 1 else None
+    )
+    reference = (
+        _text(payload.get("reference_number"))
+        or _text(payload.get("invoice_numbers"))
+        or (_text(applied[0].get("invoice_number")) if len(applied) == 1 else None)
+    )
+
+    return CanonicalPayment(
+        source_system=SourceSystem.ZOHO_BOOKS,
+        source_id=source_id,
+        customer_source_id=_text(payload.get("customer_id")),
+        customer_name=_text(payload.get("customer_name")),
+        email=_text(payload.get("email"), 320),
+        currency=currency,
+        amount_minor=amount,
+        # An accounting entry records what arrived. There is no processor between the
+        # customer and the ledger, so nothing is withheld and both are zero — stated
+        # rather than left to default, because Feature 4 compares net figures and a
+        # guessed fee would move a reconciliation.
+        fee_minor=0,
+        tax_minor=0,
+        amount_refunded_minor=0,
+        status=PaymentStatus.CAPTURED,
+        payment_time=_as_datetime(_parse_date(payload.get("date"), "date")),
+        method=_text(payload.get("payment_mode"), 40),
+        description=_text(payload.get("description"), 2000),
+        reference=reference,
+        invoice_source_id=invoice_source_id,
     )
 
 

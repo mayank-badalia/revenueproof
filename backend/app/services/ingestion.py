@@ -73,6 +73,7 @@ NORMALIZERS = {
     (SourceSystem.ZOHO_BOOKS, RecordType.CUSTOMER): normalize.zoho_contact,
     (SourceSystem.ZOHO_BOOKS, RecordType.INVOICE): normalize.zoho_invoice,
     (SourceSystem.ZOHO_BOOKS, RecordType.CREDIT_NOTE): normalize.zoho_credit_note,
+    (SourceSystem.ZOHO_BOOKS, RecordType.PAYMENT): normalize.zoho_payment,
     (SourceSystem.GOOGLE_DRIVE, RecordType.CONTRACT): normalize.drive_file,
     (SourceSystem.HUBSPOT, RecordType.CRM_ACCOUNT): normalize.hubspot_company,
 }

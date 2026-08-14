@@ -143,16 +143,28 @@ export function useWorkspaceGraph(workspaceId: string) {
   const [staleKeys, setStaleKeys] = useState<Set<NodeKey>>(new Set());
   const [lastRunId, setLastRunId] = useState<string | null>(null);
 
+  /* One request rather than three. Locally the difference is milliseconds; through
+     the tunnel a deployed frontend uses, each round trip costs about a second and a
+     half, and the canvas sits empty for all of them. */
   const refresh = useCallback(async () => {
-    const [p, s, q] = await Promise.allSettled([
-      api.pipelineState(workspaceId),
-      api.workspaceSummary(workspaceId),
-      api.listReview(workspaceId),
-    ]);
-    if (p.status === "fulfilled") setPipeline(p.value);
-    if (s.status === "fulfilled") setSummary(s.value);
-    if (q.status === "fulfilled") setQueue(q.value);
-    setLoading(false);
+    try {
+      const overview = await api.workspaceOverview(workspaceId);
+      setPipeline(overview.pipeline);
+      setSummary(overview.summary);
+      setQueue(overview.review);
+    } catch {
+      // An older backend without /overview still works, one call at a time.
+      const [p, s, q] = await Promise.allSettled([
+        api.pipelineState(workspaceId),
+        api.workspaceSummary(workspaceId),
+        api.listReview(workspaceId),
+      ]);
+      if (p.status === "fulfilled") setPipeline(p.value);
+      if (s.status === "fulfilled") setSummary(s.value);
+      if (q.status === "fulfilled") setQueue(q.value);
+    } finally {
+      setLoading(false);
+    }
   }, [workspaceId]);
 
   useEffect(() => {

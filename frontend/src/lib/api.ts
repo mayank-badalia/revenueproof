@@ -218,6 +218,14 @@ export const api = {
 
   getWorkspace: (id: string) => request<Workspace>(`/api/v1/workspaces/${id}`),
 
+  /** Pipeline state, workspace summary and the review queue in one round trip. */
+  workspaceOverview: (id: string) =>
+    request<{
+      summary: WorkspaceSummary;
+      pipeline: PipelineState;
+      review: ReviewQueue;
+    }>(`/api/v1/workspaces/${id}/overview`),
+
   workspaceSummary: (id: string) =>
     request<WorkspaceSummary>(`/api/v1/workspaces/${id}/summary`),
 

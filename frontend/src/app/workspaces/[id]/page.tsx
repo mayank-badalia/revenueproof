@@ -72,7 +72,7 @@ export default function WorkspacePage() {
             {workspace?.company_name ?? "Loading…"}
           </span>
           {workspace && (
-            <span className="ml-2 flex items-center gap-3 font-mono text-[11.5px] tabular-nums text-white/50">
+            <span className="ml-2 hidden items-center gap-3 font-mono text-[11.5px] tabular-nums text-white/50 md:flex">
               <span>
                 {workspace.reporting_period_start} → {workspace.reporting_period_end}
               </span>

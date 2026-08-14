@@ -466,10 +466,10 @@ export function WorkspaceCanvas({
   const evidenceAnchor = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="relative flex h-full min-h-0">
       <div className="relative flex min-w-0 flex-1 flex-col">
         {/* --- canvas toolbar ------------------------------------------------ */}
-        <div className="flex items-center gap-2 border-b border-line bg-paper px-4 py-2">
+        <div className="flex flex-wrap items-center gap-2 border-b border-line bg-paper px-3 py-2 sm:px-4">
           <div className="relative">
             <Button onClick={() => setShowAdd((v) => !v)} icon={<PlusIcon />}>
               Add node
@@ -512,7 +512,7 @@ export function WorkspaceCanvas({
             </Button>
           )}
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {startedAt !== null && (
               <span className="flex items-center gap-2 rounded-full bg-cobalt-soft px-3 py-1 text-[12px] text-cobalt">
                 <Spinner />

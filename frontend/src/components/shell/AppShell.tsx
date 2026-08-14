@@ -11,7 +11,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import type { Workspace } from "@/lib/types";
 
@@ -38,10 +38,27 @@ export function AppShell({
   topBar?: ReactNode;
 }) {
   const pathname = usePathname();
+  /* Below the lg breakpoint the rail slides over the working surface instead of
+     taking a fifth of it. A 236px fixed column on a phone leaves the canvas about
+     130px wide, which is not a narrow version of this product — it is an unusable
+     one. */
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => setNavOpen(false), [pathname]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-canvas">
-      <aside className="flex w-[236px] shrink-0 flex-col bg-navy-900 text-white/90">
+      {navOpen && (
+        <button
+          aria-label="Close navigation"
+          onClick={() => setNavOpen(false)}
+          className="fixed inset-0 z-40 bg-navy-900/40 lg:hidden"
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-[236px] shrink-0 flex-col bg-navy-900 text-white/90 transition-transform lg:static lg:translate-x-0 ${
+          navOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <div className="flex items-center gap-2.5 px-5 py-[18px]">
           <span className="grid h-8 w-8 place-items-center rounded-[7px] bg-white/10 font-mono text-[11px] font-semibold tracking-tight text-white ring-1 ring-white/15">
             RP
@@ -123,6 +140,16 @@ export function AppShell({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <button
+          onClick={() => setNavOpen(true)}
+          aria-label="Open navigation"
+          className="flex items-center gap-2 border-b border-navy-line bg-navy-900 px-4 py-2.5 text-[13px] text-white/80 lg:hidden"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path d="M2.5 4h11M2.5 8h11M2.5 12h11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          RevenueProof
+        </button>
         {topBar}
         <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
       </div>

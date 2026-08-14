@@ -58,7 +58,7 @@ export function Inspector({
   const style = STATUS_STYLE[node.status];
 
   return (
-    <aside className="flex h-full w-[352px] shrink-0 flex-col border-l border-line bg-paper">
+    <aside className="absolute inset-y-0 right-0 z-30 flex h-full w-full max-w-[352px] shrink-0 flex-col border-l border-line bg-paper shadow-[0_0_40px_-8px_rgba(8,17,31,0.18)] md:static md:z-auto md:w-[352px] md:shadow-none">
       <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div className="min-w-0">
           <div className="flex items-baseline gap-2">

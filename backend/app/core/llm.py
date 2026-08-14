@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from enum import StrEnum
 from typing import Any, TypeVar
 
@@ -442,7 +443,15 @@ async def structured_call(
     )
 
 
-async def healthcheck() -> dict[str, Any]:
+#: The model list changes about as often as the account does, but the check costs a
+#: network round trip — measured at ~470ms, against 15ms for every other endpoint —
+#: and `/health` is called on each page load. Cached so the status banner is not the
+#: slowest thing in the product.
+_HEALTH_TTL_SECONDS = 60.0
+_health_cache: tuple[float, dict[str, Any]] | None = None
+
+
+async def healthcheck(*, fresh: bool = False) -> dict[str, Any]:
     """Confirm the key works and both configured models are reachable.
 
     Checks whichever provider will actually serve the run. It reported Groq's model
@@ -450,6 +459,12 @@ async def healthcheck() -> dict[str, Any]:
     health panel naming two models it never called — the one place a reader goes to
     find out what is running is the last place that should be guessing.
     """
+    global _health_cache
+    if not fresh and _health_cache is not None:
+        cached_at, cached = _health_cache
+        if time.monotonic() - cached_at < _HEALTH_TTL_SECONDS:
+            return cached
+
     provider = _provider()
     if provider == "none":
         return {
@@ -467,14 +482,16 @@ async def healthcheck() -> dict[str, Any]:
                 headers={"Authorization": f"Bearer {key}"},
             )
         if response.status_code != 200:
-            return {
+            failure = {
                 "ok": False,
                 "configured": True,
                 "provider": provider,
                 "error": response.text[:200],
             }
+            _health_cache = (time.monotonic(), failure)
+            return failure
         available = {m["id"] for m in response.json().get("data", [])}
-        return {
+        healthy = {
             "ok": True,
             "configured": True,
             "provider": provider,
@@ -483,15 +500,20 @@ async def healthcheck() -> dict[str, Any]:
             "proposer_available": proposer in available,
             "critic_available": critic in available,
             "model_count": len(available),
-            "rate_limits": limiter.snapshot(),
         }
+        _health_cache = (time.monotonic(), healthy)
+        # Rate-limit state is live by definition, so it is added after caching
+        # rather than frozen into it.
+        return {**healthy, "rate_limits": limiter.snapshot()}
     except Exception as exc:
-        return {
+        failure = {
             "ok": False,
             "configured": True,
             "provider": provider,
             "error": str(exc)[:200],
         }
+        _health_cache = (time.monotonic(), failure)
+        return failure
 
 
 def log_prompt_payload(name: str, payload: dict[str, Any], workspace_id: str) -> None:
