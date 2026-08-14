@@ -821,3 +821,88 @@ async def test_the_report_download_is_self_contained(workspace_with_queue):
     # not the same document a reviewer was shown.
     assert "http://" not in body.replace("http://www.w3.org", "")
     assert "https://" not in body
+
+
+# ---------------------------------------------------------------------------
+# The critic applies the workspace's policy, not a stricter one of its own
+# ---------------------------------------------------------------------------
+
+
+def _verified_item_without_bank(**overrides):
+    """A verified receipt with complete evidence except an independent bank credit."""
+    from app.features.review.critic import ItemUnderReview
+
+    defaults = dict(
+        item_id="item-1",
+        description="INV-2026-103",
+        currency="INR",
+        classification="VERIFIED_RECURRING",
+        recognized_minor=75_000_00,
+        gross_minor=75_000_00,
+        rule_id="R02_VERIFIED_RECURRING",
+        rule_explanation="Paid and retained under a recurring contract.",
+        allocated_minor=75_000_00,
+        retained_minor=75_000_00,
+        refunded_minor=0,
+        bank_confirmed_minor=0,          # no bank feed connected
+        contract_recurring_minor=75_000_00,
+        invoice_status="sent",
+        customer_resolved=True,
+        citations_verified=True,
+    )
+    defaults.update(overrides)
+    return ItemUnderReview(**defaults)
+
+
+def test_no_bank_feed_does_not_withhold_revenue_by_default():
+    """Regression: a processor-and-ledger workspace published INR 0.00.
+
+    `policy.require_bank_confirmation` is False, and policy.py states why —
+    requiring it "would mark every workspace without a bank import as unsupported,
+    which is a statement about our integrations rather than about their revenue".
+    The critic raised MISSING_BANK_CONFIRMATION unconditionally anyway, and every
+    deterministic finding withheld a figure, so the policy was overridden from the
+    one place nothing else could see.
+    """
+    from app.features.review.critic import deterministic_checks
+
+    findings = deterministic_checks(
+        _verified_item_without_bank(bank_confirmation_required=False)
+    )
+    codes = {f.code for f in findings}
+    assert "MISSING_BANK_CONFIRMATION" in codes, (
+        "the reviewer must still be told the bank credit is absent"
+    )
+
+    bank = next(f for f in findings if f.code == "MISSING_BANK_CONFIRMATION")
+    assert bank.blocking is False, "a caveat the policy does not require cannot veto"
+    assert not any(f.blocking for f in findings), (
+        "nothing here is arithmetically wrong, so nothing may withhold the figure"
+    )
+
+
+def test_a_policy_that_demands_bank_confirmation_still_blocks():
+    """The setting has to actually mean something when it is switched on."""
+    from app.features.review.critic import deterministic_checks
+
+    findings = deterministic_checks(
+        _verified_item_without_bank(bank_confirmation_required=True)
+    )
+    bank = next(f for f in findings if f.code == "MISSING_BANK_CONFIRMATION")
+    assert bank.blocking is True
+    assert any(f.blocking for f in findings)
+
+
+def test_real_arithmetic_faults_still_block_without_a_bank_feed():
+    """Relaxing the bank rule must not relax anything else."""
+    from app.features.review.critic import deterministic_checks
+
+    findings = deterministic_checks(
+        _verified_item_without_bank(
+            bank_confirmation_required=False,
+            recognized_minor=90_000_00,   # more than was retained
+            retained_minor=75_000_00,
+        )
+    )
+    blocking = {f.code for f in findings if f.blocking}
+    assert "DOUBLE_COUNTED" in blocking, "recognising more than was retained must veto"

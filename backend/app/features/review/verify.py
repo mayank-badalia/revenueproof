@@ -151,6 +151,11 @@ async def run_maker_checker(
     }
     anomalies_by_customer = await _open_anomalies(session, workspace_id=workspace_id)
 
+    # The critic judges each item under the same policy that produced it.
+    from app.features.revenue.policy import get_policy
+
+    active_policy = get_policy(workspace.active_policy_version)
+
     # Clear this run's previous verdicts: a decision from an earlier evidence state
     # would otherwise sit beside a fresh one and it would be impossible to tell which
     # figure the reviewer was looking at.
@@ -167,6 +172,7 @@ async def run_maker_checker(
         under_review = _to_review_input(
             item, invoices=invoices, contracts=contracts,
             anomalies_by_customer=anomalies_by_customer,
+            bank_confirmation_required=active_policy.require_bank_confirmation,
         )
         # The budget is spent on the largest material items first, which is why the
         # query is ordered by recognised amount.
@@ -218,7 +224,12 @@ async def run_maker_checker(
         # evidence, it argues the other side, it can only ever weaken, and every
         # objection it raises reaches a person. What it no longer has is a silent,
         # irreproducible veto over the headline number.
-        blocked_by_checks = bool(decision.deterministic_findings)
+        # Only a *blocking* finding withholds a figure. A non-blocking one is a
+        # caveat — recorded on the item, shown to the reviewer, routed like any
+        # other objection, but not a veto. Treating every observation as a veto is
+        # what made "we have no bank feed" indistinguishable from "this arithmetic
+        # is wrong", and published zero on evidence that satisfied the policy.
+        blocked_by_checks = any(f.blocking for f in decision.deterministic_findings)
 
         if decision.verdict is CriticVerdict.APPROVED:
             result.approved += 1
@@ -332,6 +343,7 @@ def _to_review_input(
     invoices: dict[str, Invoice],
     contracts: dict[str, Contract],
     anomalies_by_customer: dict[str, list[str]],
+    bank_confirmation_required: bool = False,
 ) -> ItemUnderReview:
     """Assemble original evidence about one item from the features that own it."""
     detail = item.calculation_detail or {}
@@ -357,6 +369,7 @@ def _to_review_input(
         retained_minor=int(detail.get("retained_minor", 0) or 0),
         refunded_minor=int(detail.get("refunded_minor", 0) or 0),
         bank_confirmed_minor=int(detail.get("bank_confirmed_minor", 0) or 0),
+        bank_confirmation_required=bank_confirmation_required,
         contract_recurring_minor=contract.recurring_amount if contract else 0,
         contract_one_time_minor=contract.one_time_amount if contract else 0,
         # A contract Feature 3 flagged for review has an unverified or contradictory
