@@ -13,8 +13,8 @@ import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
 import { duration, fromMinor } from "@/lib/format";
-import { NODE_BY_KEY, STATUS_STYLE, type NodeKey } from "@/lib/graph";
-import { ReviewDecisions } from "./ReviewDecisions";
+import { NODE_BY_KEY, NODE_FEATURE, STATUS_STYLE, type NodeKey } from "@/lib/graph";
+import { NodeOutput } from "./NodeOutput";
 import {
   Banner,
   Button,
@@ -24,7 +24,7 @@ import {
   Row,
   Spinner,
 } from "@/components/ui/primitives";
-import type { NodeState } from "@/lib/useWorkspaceGraph";
+import type { NodeState, TraceLine } from "@/lib/useWorkspaceGraph";
 
 type Tab = "overview" | "inputs" | "output" | "logs";
 
@@ -38,16 +38,20 @@ export function Inspector({
   onRun,
   onDownload,
   onResolved,
+  onRemove,
+  counts,
 }: {
   workspaceId: string;
   node: NodeState;
-  events: { id: string; at: string; message: string; kind: string; severity: string }[];
+  events: TraceLine[];
   streaming: boolean;
   currency: string;
   onClose: () => void;
   onRun: (key: NodeKey) => void;
   onDownload: (key: NodeKey) => void;
   onResolved: () => void;
+  onRemove: (key: NodeKey) => void;
+  counts: Record<string, number>;
 }) {
   const [tab, setTab] = useState<Tab>("overview");
   const def = NODE_BY_KEY[node.key];
@@ -160,201 +164,159 @@ export function Inspector({
                 aria-label="Download output"
               />
             </div>
+
+            {node.key !== "evidence" && (
+              <button
+                onClick={() => onRemove(node.key)}
+                className="w-full rounded-[7px] py-1.5 text-[12px] text-ink-3 transition-colors hover:bg-rust-soft hover:text-rust"
+              >
+                Remove from canvas
+              </button>
+            )}
           </div>
         )}
 
-        {tab === "inputs" && <InputsTab node={node} />}
-        {tab === "output" && node.key === "review" && (
-          <ReviewDecisions workspaceId={workspaceId} onResolved={onResolved} />
+        {tab === "inputs" && (
+          <InputsTab node={node} counts={counts} currency={currency} />
         )}
-        {tab === "output" && node.key !== "review" && (
-          <OutputTab
+        {tab === "output" && (
+          <NodeOutput
             workspaceId={workspaceId}
-            node={node}
+            nodeKey={node.key}
             currency={currency}
-            onDownload={onDownload}
+            hasRun={node.outCount !== null || node.status === "waiting"}
+            onResolved={onResolved}
           />
         )}
-        {tab === "logs" && <LogsTab events={events} streaming={streaming} />}
+        {tab === "logs" && (
+          <LogsTab events={events} streaming={streaming} nodeKey={node.key} />
+        )}
       </div>
     </aside>
   );
 }
 
-function InputsTab({ node }: { node: NodeState }) {
+function InputsTab({
+  node,
+  counts,
+  currency,
+}: {
+  node: NodeState;
+  counts: Record<string, number>;
+  currency: string;
+}) {
   const def = NODE_BY_KEY[node.key];
-  if (def.needs.length === 0) {
-    return (
-      <div>
-        <p className="text-[12.5px] leading-relaxed text-ink-2">
-          This node reads from outside the workspace — the sources you connect. Nothing
-          on the canvas feeds it.
-        </p>
-        <div className="mt-3">
-          <Row label="Records produced" mono>
-            {node.outCount ?? "—"}
-          </Row>
-        </div>
-      </div>
-    );
-  }
+  const reads = INPUT_SOURCES[node.key] ?? [];
+
   return (
     <div>
-      <Eyebrow>Reads from</Eyebrow>
-      <div className="mt-2 space-y-1.5">
-        {def.needs.map((key) => {
-          const upstream = NODE_BY_KEY[key];
-          return (
-            <div
-              key={key}
-              className="flex items-center gap-2.5 rounded-[7px] border border-line px-3 py-2"
-            >
-              <span className="font-mono text-[10.5px] font-semibold tabular-nums text-ink-3">
-                {upstream.ord}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12.5px] font-medium text-ink">
-                  {upstream.title}
-                </span>
-                <span className="block text-[11.5px] text-ink-3">{upstream.emits}</span>
-              </span>
-            </div>
-          );
-        })}
+      <Eyebrow>What this node reads</Eyebrow>
+      <div className="mt-1.5 space-y-1">
+        {reads.length === 0 ? (
+          <p className="text-[12.5px] leading-relaxed text-ink-2">
+            Nothing on the canvas feeds this node — it reads from outside the workspace,
+            from the sources you connect.
+          </p>
+        ) : (
+          reads.map(([label, key]) => (
+            <Row key={label} label={label} mono>
+              {counts[key] ?? 0}
+            </Row>
+          ))
+        )}
       </div>
-      <div className="mt-3.5">
+
+      {def.needs.length > 0 && (
+        <div className="mt-4">
+          <Eyebrow>Fed by</Eyebrow>
+          <div className="mt-1.5 space-y-1.5">
+            {def.needs.map((key) => {
+              const upstream = NODE_BY_KEY[key];
+              return (
+                <div
+                  key={key}
+                  className="flex items-center gap-2.5 rounded-[7px] border border-line px-3 py-2"
+                >
+                  <span className="font-mono text-[10.5px] font-semibold tabular-nums text-ink-3">
+                    {upstream.ord}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12.5px] font-medium text-ink">
+                      {upstream.title}
+                    </span>
+                    <span className="block text-[11.5px] text-ink-3">{upstream.emits}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4">
         <Row label="Records read" mono>
           {node.inCount ?? "—"}
+        </Row>
+        <Row label="Base currency" mono>
+          {currency}
         </Row>
       </div>
     </div>
   );
 }
 
-/** The output tab pulls the node's real figures from the endpoint that owns them. */
-function OutputTab({
-  workspaceId,
-  node,
-  currency,
-  onDownload,
-}: {
-  workspaceId: string;
-  node: NodeState;
-  currency: string;
-  onDownload: (key: NodeKey) => void;
-}) {
-  const [rows, setRows] = useState<[string, string][] | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setRows(null);
-      try {
-        const out: [string, string][] = [];
-        if (node.key === "identity") {
-          const r = await api.listResolvedCustomers(workspaceId);
-          out.push(["Customers resolved", String(r.customers.length)]);
-          out.push([
-            "Under review",
-            String(r.customers.filter((c) => !c.human_confirmed && c.match_confidence !== null).length),
-          ]);
-        } else if (node.key === "contracts") {
-          const r = await api.listContracts(workspaceId);
-          const read = r.contracts.filter((c) => c.recurring_amount.minor > 0 || c.one_time_amount.minor > 0);
-          out.push(["Contracts", String(r.contracts.length)]);
-          out.push(["Read successfully", String(read.length)]);
-        } else if (node.key === "reconcile") {
-          const r = await api.reconciliation(workspaceId);
-          out.push(["Solver", r.solver_status ?? "—"]);
-          out.push(["Retained cash", r.totals?.retained?.display ?? "—"]);
-          out.push(["Allocations written", String(r.allocations_written)]);
-          out.push(["Invoices unpaid", String(r.invoices_unpaid)]);
-        } else if (node.key === "revenue") {
-          const r = await api.revenueSummary(workspaceId);
-          out.push(["Claimed", fromMinor(r.totals.claimed_revenue, r.totals.currency)]);
-          out.push([
-            "Evidence-supported",
-            fromMinor(r.totals.total_verified, r.totals.currency),
-          ]);
-          out.push(["Items classified", String(r.items_classified)]);
-        } else if (node.key === "anomalies") {
-          const r = await api.listAnomalies(workspaceId);
-          out.push(["Indicators", String(r.anomalies.length)]);
-          out.push([
-            "High severity",
-            String(r.anomalies.filter((a) => a.severity === "high").length),
-          ]);
-        } else if (node.key === "critic" || node.key === "review") {
-          const r = await api.listReview(workspaceId);
-          out.push(["Open decisions", String(r.summary.open_decisions)]);
-          out.push(["Resolved", String(r.summary.resolved)]);
-        } else if (node.key === "publish") {
-          const r = await api.diligenceRoom(workspaceId);
-          out.push(["Claimed", fromMinor(r.position.claimed_revenue, currency)]);
-          out.push(["Proven and published", fromMinor(r.position.cash_received, currency)]);
-          out.push(["Items published", String(r.position.items_published)]);
-        } else if (node.key === "evidence") {
-          const r = await api.workspaceSummary(workspaceId);
-          for (const [k, v] of Object.entries(r.evidence_counts)) {
-            out.push([k.replace(/_/g, " "), String(v)]);
-          }
-        }
-        if (!cancelled) setRows(out);
-      } catch {
-        if (!cancelled) setRows([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    if (node.outCount !== null) void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [node.key, node.outCount, workspaceId, currency]);
-
-  if (node.outCount === null) {
-    return (
-      <div className="rounded-[8px] border border-dashed border-line px-4 py-8 text-center">
-        <p className="text-[12.5px] font-medium text-ink">No output yet</p>
-        <p className="mt-1 text-[11.5px] text-ink-2">
-          Run this node to produce something to inspect.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {loading && <Spinner className="text-ink-3" />}
-      {rows && rows.length > 0 && (
-        <div className="mb-3.5">
-          {rows.map(([label, value]) => (
-            <Row key={label} label={label} mono>
-              {value}
-            </Row>
-          ))}
-        </div>
-      )}
-      <Button className="w-full" onClick={() => onDownload(node.key)} icon={<DownloadIcon />}>
-        Download this node&rsquo;s output
-      </Button>
-    </div>
-  );
-}
+/** The record types each node consumes, named as a reviewer would name them. */
+const INPUT_SOURCES: Partial<Record<NodeKey, [string, string][]>> = {
+  identity: [
+    ["Raw records", "raw_records"],
+    ["Customer records", "customers"],
+  ],
+  contracts: [["Contract documents", "contracts"]],
+  reconcile: [
+    ["Invoices", "invoices"],
+    ["Payments", "payments"],
+    ["Bank transactions", "bank_transactions"],
+    ["Refunds", "refunds"],
+  ],
+  revenue: [
+    ["Allocations", "allocations"],
+    ["Invoices", "invoices"],
+    ["Contracts", "contracts"],
+  ],
+  anomalies: [
+    ["Revenue items", "revenue_items"],
+    ["Customers", "customers"],
+  ],
+  critic: [["Revenue items", "revenue_items"]],
+  review: [["Critic decisions", "critic_decisions"]],
+  publish: [
+    ["Revenue items", "revenue_items"],
+    ["Critic decisions", "critic_decisions"],
+  ],
+};
 
 function LogsTab({
   events,
   streaming,
+  nodeKey,
 }: {
-  events: { id: string; at: string; message: string; kind: string; severity: string }[];
+  events: TraceLine[];
   streaming: boolean;
+  nodeKey: NodeKey;
 }) {
+  /* Only this node's lines. The trace carries the feature that emitted each event, so
+     "logs" on a node can mean that node rather than everything the workspace has ever
+     done — which is what made the panel unreadable and identical on all nine. */
+  const feature = NODE_FEATURE[nodeKey];
+  const mine = events.filter((e) => e.feature === feature);
+  const shown = mine.length > 0 ? mine : events;
+
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
-        <Eyebrow>Live events</Eyebrow>
+        <Eyebrow>
+          {mine.length > 0 ? "This node" : "Workspace"} · {shown.length} events
+        </Eyebrow>
         <span className="flex items-center gap-1.5 text-[11px] text-ink-3">
           <span
             className={`h-[6px] w-[6px] rounded-full ${
@@ -364,14 +326,17 @@ function LogsTab({
           {streaming ? "Streaming" : "Idle"}
         </span>
       </div>
-      {events.length === 0 ? (
-        <p className="text-[12px] text-ink-3">Nothing yet. Run a node to see what it does.</p>
+      {shown.length === 0 ? (
+        <p className="text-[12px] text-ink-3">Nothing yet. Run this node to see what it does.</p>
       ) : (
         <ol className="space-y-1.5">
-          {[...events].reverse().map((event) => (
+          {[...shown].reverse().map((event) => (
             <li key={event.id} className="flex gap-2">
-              <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-ink-3">
-                {event.at ? new Date(event.at).toLocaleTimeString(undefined, { hour12: false }) : "--:--:--"}
+              <span
+                className="shrink-0 font-mono text-[10.5px] tabular-nums text-ink-3"
+                title={event.at ? new Date(event.at).toLocaleString() : undefined}
+              >
+                {clockOf(event.at)}
               </span>
               <span
                 className={`text-[11.5px] leading-snug ${
@@ -390,4 +355,24 @@ function LogsTab({
       )}
     </div>
   );
+}
+
+/**
+ * The backend stamps events in UTC with an offset, so the browser converts correctly —
+ * but a bare wall clock on a line from yesterday reads as though it happened moments
+ * ago. Anything not from today carries its date.
+ */
+function clockOf(iso: string): string {
+  if (!iso) return "--:--:--";
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "--:--:--";
+  const time = at.toLocaleTimeString(undefined, { hour12: false });
+  const now = new Date();
+  const sameDay =
+    at.getDate() === now.getDate() &&
+    at.getMonth() === now.getMonth() &&
+    at.getFullYear() === now.getFullYear();
+  return sameDay
+    ? time
+    : `${at.toLocaleDateString(undefined, { day: "2-digit", month: "short" })} ${time}`;
 }

@@ -30,6 +30,7 @@ import type {
   PipelineState,
   QuarantineResponse,
   ReconciliationRun,
+  ReportVersionRow,
   ResolutionRun,
   ResolvedCustomer,
   RevenueRun,
@@ -372,6 +373,11 @@ export const api = {
     request<{ ran: string[]; skipped: string; version: { version: number; explanation: string } }>(
       `/api/v1/workspaces/${id}/room/rerun`,
       { method: "POST", body: JSON.stringify({ days: 365, force, use_llm: true }) },
+    ),
+
+  roomVersions: (id: string) =>
+    request<{ versions: ReportVersionRow[]; total: number }>(
+      `/api/v1/workspaces/${id}/room/versions`,
     ),
 
   publishVersion: (id: string, force = false) =>

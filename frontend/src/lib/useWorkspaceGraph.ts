@@ -101,6 +101,11 @@ export function useWorkspaceGraph(workspaceId: string) {
      run is on the canvas by definition; this set is only for the ones that are not
      yet backed by any rows. */
   const [added, setAdded] = useState<Set<NodeKey>>(new Set(["evidence"]));
+  /* Nodes taken off the canvas. Without this a removed node came straight back on the
+     next refresh, because presence is derived from whether the stage has run — and
+     running it is exactly what made it worth removing. Re-adding clears the entry,
+     which is what stopped "already added" from being permanent. */
+  const [removed, setRemoved] = useState<Set<NodeKey>>(new Set());
   const [running, setRunning] = useState<Set<NodeKey>>(new Set());
   const [failed, setFailed] = useState<Record<string, string>>({});
   const [durations, setDurations] = useState<Record<string, number>>({});
@@ -144,9 +149,10 @@ export function useWorkspaceGraph(workspaceId: string) {
       const key = def.key;
       const hasRun = key === "review" ? criticRan && openDecisions === 0 : completed.has(key);
       const onCanvas =
-        added.has(key) ||
-        completed.has(key) ||
-        (key === "review" && criticRan && openDecisions > 0);
+        !removed.has(key) &&
+        (added.has(key) ||
+          completed.has(key) ||
+          (key === "review" && criticRan && openDecisions > 0));
 
       const unmet = unmetPrerequisites(key, completed);
       let status: NodeStatus;
@@ -194,6 +200,7 @@ export function useWorkspaceGraph(workspaceId: string) {
     durations,
     staleKeys,
     hasEvidence,
+    removed,
   ]);
 
   const presentKeys = useMemo(
@@ -209,11 +216,33 @@ export function useWorkspaceGraph(workspaceId: string) {
       if (missing.length > 0) {
         return `Add ${missing.map((k) => NODE_BY_KEY[k].title).join(" and ")} first`;
       }
+      setRemoved((prev) => {
+        if (!prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
       setAdded((prev) => new Set(prev).add(key));
       return null;
     },
     [presentKeys],
   );
+
+  /**
+   * Take a node off the canvas. This is a view action: the rows the stage wrote stay
+   * exactly where they are, and re-adding the node shows them again. Nothing a
+   * verification produced is deleted by rearranging the picture of it.
+   */
+  const removeNode = useCallback((key: NodeKey) => {
+    if (key === "evidence") return "Load Evidence is the required starting point";
+    setAdded((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    setRemoved((prev) => new Set(prev).add(key));
+    return null;
+  }, []);
 
   const markRunning = useCallback((keys: NodeKey[], on: boolean) => {
     setRunning((prev) => {
@@ -284,6 +313,7 @@ export function useWorkspaceGraph(workspaceId: string) {
       queue,
       refresh,
       addNode,
+      removeNode,
       markRunning,
       markStaleDownstream,
       clearStale,
@@ -302,6 +332,7 @@ export function useWorkspaceGraph(workspaceId: string) {
       queue,
       refresh,
       addNode,
+      removeNode,
       markRunning,
       markStaleDownstream,
       clearStale,

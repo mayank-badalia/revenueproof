@@ -14,6 +14,7 @@ import { useState } from "react";
 
 import { api, ApiError } from "@/lib/api";
 import { Banner, Button, Spinner } from "@/components/ui/primitives";
+import { ConnectedAccounts } from "./ConnectedAccounts";
 import type { ConnectionStatus } from "@/lib/types";
 
 type SourceId = "template" | "generated" | "live" | "bank" | "contracts";
@@ -23,11 +24,13 @@ const SEEDS = ["acme-demo", "harbour-run", "northwind", "silverpine", "kestrel-2
 export function SourcePicker({
   workspaceId,
   connections,
+  deploymentProviders,
   onLoaded,
   onClose,
 }: {
   workspaceId: string;
   connections: ConnectionStatus[];
+  deploymentProviders?: Record<string, boolean>;
   onLoaded: () => void;
   onClose: () => void;
 }) {
@@ -111,7 +114,7 @@ export function SourcePicker({
   const needsFile = choice === "bank" || choice === "contracts";
 
   return (
-    <div className="w-[352px] overflow-hidden rounded-[10px] border border-line bg-paper shadow-[0_14px_40px_-8px_rgba(8,17,31,0.24)]">
+    <div className="max-h-[78vh] w-[392px] overflow-y-auto scroll-thin rounded-[10px] border border-line bg-paper shadow-[0_14px_40px_-8px_rgba(8,17,31,0.24)]">
       <header className="flex items-center justify-between border-b border-line px-3.5 py-2.5">
         <h3 className="text-[13px] font-semibold text-ink">Choose evidence source</h3>
         <button
@@ -187,10 +190,18 @@ export function SourcePicker({
         )}
 
         {choice === "live" && (
-          <Banner tone="warn">
-            None of the four is a bank, so receipts stop at &ldquo;verified by the
-            processor&rdquo; until you upload the bank statement covering this period.
-          </Banner>
+          <div className="space-y-2">
+            <Banner tone="warn">
+              None of the four is a bank, so receipts stop at &ldquo;verified by the
+              processor&rdquo; until you upload the bank statement covering this period.
+            </Banner>
+            <ConnectedAccounts
+              workspaceId={workspaceId}
+              connections={connections}
+              deploymentProviders={deploymentProviders}
+              onChanged={onLoaded}
+            />
+          </div>
         )}
 
         {error && <Banner tone="error">{error}</Banner>}

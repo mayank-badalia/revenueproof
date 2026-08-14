@@ -425,6 +425,14 @@ export function WorkspaceCanvas({
               nodes={flowNodes}
               edges={flowEdges}
               onNodesChange={onNodesChange}
+              onNodesDelete={(deleted) => {
+                for (const node of deleted) {
+                  const refusal = graph.removeNode(node.id as NodeKey);
+                  if (refusal) setToast({ tone: "warn", text: refusal });
+                  else if (selected === node.id) setSelected(null);
+                }
+              }}
+              deleteKeyCode={["Backspace", "Delete"]}
               nodeTypes={NODE_TYPES}
               fitView
               fitViewOptions={{ padding: 0.2, maxZoom: 1, minZoom: 0.35 }}
@@ -474,6 +482,7 @@ export function WorkspaceCanvas({
               <SourcePicker
                 workspaceId={workspaceId}
                 connections={summary?.connections ?? []}
+                deploymentProviders={summary?.deployment_providers}
                 onClose={() => setShowSources(false)}
                 onLoaded={() => {
                   void graph.refresh();
@@ -506,7 +515,13 @@ export function WorkspaceCanvas({
           onClose={() => setSelected(null)}
           onRun={runNode}
           onDownload={download}
+          counts={graph.counts}
           onResolved={() => void graph.refresh()}
+          onRemove={(key) => {
+            const refusal = graph.removeNode(key);
+            if (refusal) setToast({ tone: "warn", text: refusal });
+            else setSelected(null);
+          }}
         />
       )}
     </div>

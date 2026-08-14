@@ -316,3 +316,16 @@ export const DOWNLOAD_KEY: Record<NodeKey, string> = {
   review: "review-queue",
   publish: "report",
 };
+
+/** The backend feature number each node's events are stamped with. */
+export const NODE_FEATURE: Record<NodeKey, number> = {
+  evidence: 1,
+  identity: 2,
+  contracts: 3,
+  reconcile: 4,
+  revenue: 5,
+  anomalies: 6,
+  critic: 7,
+  review: 7,
+  publish: 8,
+};
