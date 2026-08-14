@@ -1,26 +1,174 @@
 @import "tailwindcss";
+@import "reactflow/dist/style.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * RevenueProof — enterprise diligence workspace.
+ *
+ * The palette is a working instrument, not a mood. Every colour here means one
+ * state of a verification and nothing else, so a reviewer can read the canvas at a
+ * glance without a legend: cobalt is running, emerald is proven, amber is waiting on
+ * a person, rust is disputed, slate is not yet reachable. Nothing is coloured for
+ * decoration, because a colour that sometimes means nothing makes the colours that
+ * mean something unreadable.
+ */
+
+@theme {
+  /* Chrome. Navy deep enough that the canvas beside it reads as lit paper. */
+  --color-navy-900: #08111f;
+  --color-navy-800: #0d1a2b;
+  --color-navy-700: #16273c;
+  --color-navy-600: #1f3550;
+  --color-navy-line: #1c2f47;
+
+  /* Canvas. Warm off-white — paper under a desk lamp, not a screen grey. */
+  --color-canvas: #faf8f3;
+  --color-canvas-dot: #dcd5c7;
+  --color-paper: #ffffff;
+
+  /* Ink */
+  --color-ink: #0f172a;
+  --color-ink-2: #475569;
+  --color-ink-3: #8b96a5;
+  --color-line: #e4e7ec;
+  --color-line-2: #eef1f4;
+
+  /* State. One meaning each. */
+  --color-cobalt: #2563eb;
+  --color-cobalt-soft: #eff4ff;
+  --color-emerald: #047857;
+  --color-emerald-soft: #ecfdf5;
+  --color-amber: #b45309;
+  --color-amber-soft: #fffbeb;
+  --color-rust: #b42318;
+  --color-rust-soft: #fef3f2;
+  --color-slate: #94a3b8;
+  --color-slate-soft: #f5f7f9;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --radius-node: 10px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/*
+ * Every figure in this product is a financial quantity that gets compared against
+ * the one above it. Proportional digits make a column of rupees impossible to scan,
+ * so numerals are tabular everywhere by default, not only in tables.
+ */
+.tnum,
+input[type="text"].tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* A visible focus ring is not optional in a tool that records decisions. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-cobalt);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --- React Flow overrides ------------------------------------------------ */
+
+.react-flow__background {
+  background-color: var(--color-canvas);
+}
+
+.react-flow__node {
+  cursor: default;
+}
+
+.react-flow__handle {
+  width: 7px;
+  height: 7px;
+  background: var(--color-paper);
+  border: 1.5px solid var(--color-slate);
+}
+
+.react-flow__handle:hover {
+  border-color: var(--color-cobalt);
+}
+
+.react-flow__edge-path {
+  stroke-width: 1.5;
+}
+
+.react-flow__edge-text {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  fill: var(--color-ink-3);
+}
+
+.react-flow__edge-textbg {
+  fill: var(--color-canvas);
+}
+
+.react-flow__attribution {
+  display: none;
+}
+
+/* The running edge crawls toward its target, so a glance says which way work flows. */
+.edge-running .react-flow__edge-path {
+  stroke: var(--color-cobalt);
+  stroke-dasharray: 5 4;
+  animation: crawl 0.7s linear infinite;
+}
+
+@keyframes crawl {
+  to {
+    stroke-dashoffset: -9;
+  }
+}
+
+@keyframes pulse-ring {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.running-dot {
+  animation: pulse-ring 1.4s ease-in-out infinite;
+}
+
+/* Thin, quiet scrollbars — the inspector scrolls constantly. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }

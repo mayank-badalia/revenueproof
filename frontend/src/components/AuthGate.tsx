@@ -1,15 +1,20 @@
 "use client";
 
 /**
- * Sign-in / registration gate.
+ * Sign in or register.
  *
- * Intentionally minimal — the build instructions put effort into the backend and
- * agents rather than the frontend. It exists so that workspace authorization,
- * RBAC and the audit log have a real user identity to record.
+ * A split screen: the product's claim on the navy side, the form on the paper side.
+ * The left panel states what the tool does in one sentence and then shows the chain
+ * it verifies, because that chain *is* the product and someone arriving at a login
+ * screen has no other way to find out what they are signing in to.
  */
 
 import { useState } from "react";
+
 import { ApiError, api, setToken } from "@/lib/api";
+import { Banner, Button, Field, Input, Spinner } from "@/components/ui/primitives";
+
+const CHAIN = ["Customer", "Contract", "Invoice", "Payment", "Bank receipt", "Refund"];
 
 export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -38,93 +43,113 @@ export function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4">
-      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <h1 className="text-xl font-semibold">RevenueProof</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Evidence-backed revenue verification for startup due diligence.
+    <div className="flex min-h-screen">
+      <div className="relative hidden w-[46%] flex-col justify-between overflow-hidden bg-navy-900 p-11 text-white lg:flex">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-8 w-8 place-items-center rounded-[7px] bg-white/10 font-mono text-[11px] font-semibold ring-1 ring-white/15">
+            RP
+          </span>
+          <span className="text-[15px] font-semibold tracking-[-0.01em]">RevenueProof</span>
+        </div>
+
+        <div className="max-w-[400px]">
+          <h1 className="text-[30px] font-semibold leading-[1.18] tracking-[-0.025em]">
+            Does the revenue a startup claims actually exist?
+          </h1>
+          <p className="mt-3.5 text-[14px] leading-relaxed text-white/60">
+            Every rupee of real revenue leaves the same trail. RevenueProof rebuilds that
+            trail from five systems and shows you which links are missing.
+          </p>
+
+          <ol className="mt-8 space-y-0">
+            {CHAIN.map((step, index) => (
+              <li key={step} className="flex items-center gap-3">
+                <span className="flex flex-col items-center">
+                  <span className="h-[7px] w-[7px] rounded-full bg-white/35" />
+                  {index < CHAIN.length - 1 && <span className="h-6 w-px bg-white/15" />}
+                </span>
+                <span className="-mt-[1px] pb-[9px] text-[13px] text-white/75">{step}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <p className="max-w-[400px] text-[11.5px] leading-relaxed text-white/35">
+          Shows what the evidence supports and what it does not. Not investment advice,
+          and it does not certify revenue.
         </p>
+      </div>
 
-        <form onSubmit={submit} className="mt-6 space-y-4">
-          {mode === "register" && (
-            <div>
-              <label htmlFor="fullName" className="block text-sm font-medium">
-                Full name
-              </label>
-              <input
-                id="fullName"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                autoComplete="name"
-              />
-            </div>
-          )}
+      <div className="flex flex-1 items-center justify-center px-6 py-12">
+        <div className="w-full max-w-[352px]">
+          <h2 className="text-[21px] font-semibold tracking-[-0.02em] text-ink">
+            {mode === "login" ? "Sign in" : "Create an account"}
+          </h2>
+          <p className="mt-1 text-[13px] text-ink-2">
+            {mode === "login"
+              ? "Continue to your verification workspaces."
+              : "Your decisions are recorded against this identity."}
+          </p>
 
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              autoComplete="email"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-            />
+          <form onSubmit={submit} className="mt-6 space-y-3.5">
             {mode === "register" && (
-              <p className="mt-1 text-xs text-slate-500">Minimum 8 characters.</p>
+              <Field label="Full name">
+                <Input
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Jane Doe"
+                  autoComplete="name"
+                />
+              </Field>
             )}
-          </div>
+            <Field label="Email">
+              <Input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
+                autoComplete="email"
+              />
+            </Field>
+            <Field label="Password">
+              <Input
+                type="password"
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 8 characters"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+              />
+            </Field>
 
-          {error && (
-            <p
-              role="alert"
-              className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700"
+            {error && <Banner tone="error">{error}</Banner>}
+
+            <Button
+              type="submit"
+              variant="primary"
+              className="w-full"
+              disabled={busy}
+              icon={busy ? <Spinner /> : undefined}
             >
-              {error}
-            </p>
-          )}
+              {busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
+            </Button>
+          </form>
 
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-          >
-            {busy ? "Working…" : mode === "login" ? "Sign in" : "Create account"}
-          </button>
-        </form>
-
-        <button
-          type="button"
-          onClick={() => {
-            setMode(mode === "login" ? "register" : "login");
-            setError(null);
-          }}
-          className="mt-4 w-full text-sm text-slate-600 hover:text-slate-900"
-        >
-          {mode === "login"
-            ? "Need an account? Register"
-            : "Already registered? Sign in"}
-        </button>
+          <p className="mt-5 text-[12.5px] text-ink-2">
+            {mode === "login" ? "No account yet?" : "Already have an account?"}{" "}
+            <button
+              onClick={() => {
+                setMode(mode === "login" ? "register" : "login");
+                setError(null);
+              }}
+              className="font-medium text-cobalt hover:underline"
+            >
+              {mode === "login" ? "Create one" : "Sign in"}
+            </button>
+          </p>
+        </div>
       </div>
     </div>
   );
