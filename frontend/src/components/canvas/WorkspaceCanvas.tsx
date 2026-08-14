@@ -29,6 +29,8 @@ import {
   LAYOUT,
   NODES,
   NODE_BY_KEY,
+  bypassedBetween,
+  nearestPresentSources,
   type NodeKey,
   type NodeStatus,
 } from "@/lib/graph";
@@ -399,56 +401,65 @@ export function WorkspaceCanvas({
 
   const flowEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [];
+    const seen = new Set<string>();
+
     for (const def of NODES) {
       if (!graph.nodes[def.key].onCanvas) continue;
+
       for (const need of def.needs) {
-        if (!graph.nodes[need].onCanvas) continue;
-        const source = graph.nodes[need];
-        const target = graph.nodes[def.key];
-        const active = target.status === "running";
-        const done = ["complete", "waiting", "stale"].includes(source.status);
-        edges.push({
-          id: `${need}->${def.key}`,
-          source: need,
-          target: def.key,
-          type: "smoothstep",
-          animated: false,
-          label: NODE_BY_KEY[need].emits,
-          labelShowBg: true,
-          className: active ? "edge-running" : undefined,
-          style: {
-            stroke: active ? "#2563eb" : done ? "#047857" : "#cbd5e1",
-            strokeWidth: active || done ? 1.75 : 1.25,
-            strokeDasharray: done || active ? undefined : "4 4",
-          },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            width: 14,
-            height: 14,
-            color: active ? "#2563eb" : done ? "#047857" : "#cbd5e1",
-          },
-        });
+        // A cut node does not orphan what came after it: the edge reaches back to the
+        // nearest node still present, and is drawn as a bypass so the skipped step is
+        // visible rather than silently forgotten.
+        const sources = nearestPresentSources(need, graph.presentKeys);
+        for (const sourceKey of sources) {
+          const id = `${sourceKey}->${def.key}`;
+          if (seen.has(id)) continue;
+          seen.add(id);
+
+          const bypassed = bypassedBetween(sourceKey, need, graph.presentKeys);
+          const isBypass = bypassed.length > 0;
+          const source = graph.nodes[sourceKey];
+          const target = graph.nodes[def.key];
+          const active = target.status === "running";
+          const done = ["complete", "waiting", "stale"].includes(source.status);
+
+          const colour = isBypass
+            ? "#b45309"
+            : active
+              ? "#2563eb"
+              : done
+                ? "#047857"
+                : "#cbd5e1";
+
+          edges.push({
+            id,
+            source: sourceKey,
+            target: def.key,
+            type: "smoothstep",
+            animated: false,
+            label: isBypass
+              ? `skips ${bypassed.map((k) => NODE_BY_KEY[k].title).join(", ")}`
+              : NODE_BY_KEY[sourceKey].emits,
+            labelShowBg: true,
+            className: active && !isBypass ? "edge-running" : undefined,
+            style: {
+              stroke: colour,
+              strokeWidth: isBypass ? 1.5 : active || done ? 1.75 : 1.25,
+              strokeDasharray: isBypass ? "6 4" : done || active ? undefined : "4 4",
+            },
+            labelStyle: isBypass ? { fill: "#b45309", fontWeight: 500 } : undefined,
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              width: 14,
+              height: 14,
+              color: colour,
+            },
+          });
+        }
       }
     }
     return edges;
-  }, [graph.nodes]);
-
-  /* While Run all is in flight, the newest event carrying a feature number tells us
-     which stage is actually working. Marking only that one as running — rather than
-     all seven — is the difference between a progress display and a spinner farm. */
-  useEffect(() => {
-    if (!runningAll) return;
-    for (let i = events.length - 1; i >= 0; i -= 1) {
-      const key = events[i].feature ? FEATURE_TO_NODE[events[i].feature!] : undefined;
-      if (!key || key === "evidence") continue;
-      const order = NODES.filter((n) => n.stage).map((n) => n.key);
-      const at = order.indexOf(key);
-      if (at < 0) continue;
-      markRunning(order.slice(at + 1), false);
-      markRunning([key], true);
-      break;
-    }
-  }, [events, runningAll, markRunning]);
+  }, [graph.nodes, graph.presentKeys]);
 
   const latest = events.length > 0 ? events[events.length - 1].message : null;
   const selectedState = selected ? graph.nodes[selected] : null;

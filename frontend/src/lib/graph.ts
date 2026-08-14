@@ -354,3 +354,47 @@ export const NODE_FEATURE: Record<NodeKey, number> = {
   review: 7,
   publish: 8,
 };
+
+/**
+ * The nearest nodes still on the canvas that can feed `need`.
+ *
+ * Cutting a node out of the middle of the chain left everything below it floating:
+ * Human Review and Publish both read from Independent Critic, so removing the critic
+ * detached them entirely and the canvas showed two islands with no explanation. The
+ * graph should close over a cut the way a chain closes over a removed link.
+ *
+ * So a dependency that is no longer present resolves to whatever *it* depended on,
+ * recursively, until something present is found. The resulting edge is drawn as a
+ * bypass — it is a real connection, but it skips a step, and the canvas says so.
+ */
+export function nearestPresentSources(
+  need: NodeKey,
+  present: Set<NodeKey>,
+  seen: Set<NodeKey> = new Set(),
+): NodeKey[] {
+  if (present.has(need)) return [need];
+  if (seen.has(need)) return [];
+  seen.add(need);
+  const out = new Set<NodeKey>();
+  for (const parent of NODE_BY_KEY[need].needs) {
+    for (const found of nearestPresentSources(parent, present, seen)) out.add(found);
+  }
+  return [...out];
+}
+
+/** Which cut nodes an edge is stepping over, for the label it carries. */
+export function bypassedBetween(
+  source: NodeKey,
+  need: NodeKey,
+  present: Set<NodeKey>,
+  seen: Set<NodeKey> = new Set(),
+): NodeKey[] {
+  if (present.has(need) || seen.has(need)) return [];
+  seen.add(need);
+  const out = [need];
+  for (const parent of NODE_BY_KEY[need].needs) {
+    if (parent === source) continue;
+    out.push(...bypassedBetween(source, parent, present, seen));
+  }
+  return out;
+}
