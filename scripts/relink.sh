@@ -41,7 +41,7 @@ nohup cloudflared tunnel --url http://localhost:8000 --no-autoupdate > "$TUNNEL_
 
 PUBLIC_URL=""
 for _ in $(seq 1 45); do
-  PUBLIC_URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1 || true)
+  PUBLIC_URL=$(grep -aoE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1 || true)
   [ -n "$PUBLIC_URL" ] && break
   sleep 1
 done
