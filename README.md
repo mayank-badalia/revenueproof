@@ -342,10 +342,25 @@ data is parsed never rewrites what a provider originally said.
 ### Fastest path
 
 ```bash
-./scripts/serve-demo.sh
+./run.sh
 ```
 
-Starts the databases, the API and a public tunnel in one command.
+Databases, API, UI, public tunnel, and the deployed frontend at
+`https://revenueproof.vercel.app` — one command, about two minutes from nothing.
+
+It adopts whatever is already running rather than starting a second copy, so
+re-running it is a five-second health check, not a restart. It rebuilds the Vercel
+deployment only when the tunnel hostname has actually changed, which it verifies by
+reading the deployed bundle rather than assuming.
+
+```bash
+./run.sh --local        # localhost only: no tunnel, no Vercel
+./run.sh --no-deploy    # open the tunnel, leave Vercel alone
+./run.sh --stop         # shut everything down, Docker included
+```
+
+`scripts/serve-demo.sh` (API and tunnel only, stays in the foreground) still works if
+you want the smaller thing.
 
 ### Step by step
 
