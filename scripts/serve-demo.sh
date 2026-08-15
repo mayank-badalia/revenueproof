@@ -24,6 +24,8 @@ say()  { printf '%s%s%s\n' "$BOLD" "$1" "$OFF"; }
 ok()   { printf '  %s✓%s %s\n' "$GREEN" "$OFF" "$1"; }
 die()  { printf '  %s✗%s %s\n' "$RED" "$OFF" "$1" >&2; exit 1; }
 
+DNS_WAIT="${DNS_WAIT:-100}"
+
 # --- prerequisites -----------------------------------------------------------
 say "Checking prerequisites"
 command -v docker >/dev/null || die "Docker is not installed. On macOS: brew install colima docker && colima start --cpu 4 --memory 8"
@@ -79,7 +81,47 @@ for i in $(seq 1 45); do
 done
 [ -n "$PUBLIC_URL" ] || { cat /tmp/revenueproof-tunnel.log; die "The tunnel did not report a URL. Log above."; }
 
-curl -fsS "$PUBLIC_URL/health" >/dev/null 2>&1 && ok "Tunnel is serving the API" || die "The tunnel opened but $PUBLIC_URL/health did not answer"
+ok "Tunnel registered: ${PUBLIC_URL}"
+
+# Cloudflare publishes a quick-tunnel hostname a few seconds *after* cloudflared
+# prints it, and trycloudflare.com's SOA sets a 30 minute negative-cache TTL. So
+# one impatient lookup makes the tunnel unreachable from this machine for half an
+# hour while it serves the rest of the internet perfectly — which is exactly what
+# the single immediate curl that used to live here kept doing to itself.
+printf '  %swaiting %ss for Cloudflare to publish the hostname (do not skip: a lookup\n  now would cache NXDOMAIN for 30 minutes)%s\n' "$DIM" "$DNS_WAIT" "$OFF"
+sleep "$DNS_WAIT"
+
+TUNNEL_HOST="${PUBLIC_URL#https://}"
+RESOLVER_NOTE=""
+tunnel_answers() {
+  # This machine's own resolver first — that is what a browser here will use.
+  curl -fsS --max-time 20 "$PUBLIC_URL/health" >/dev/null 2>&1 && return 0
+
+  # If it will not resolve, ask a public resolver what the internet sees. The
+  # tunnel's consumer is the deployed frontend, not this laptop, so a stale
+  # negative entry in mDNSResponder is a local inconvenience, not a dead tunnel —
+  # and reporting it as a dead tunnel sends you debugging the wrong machine.
+  local ip
+  ip=$(dig +short "$TUNNEL_HOST" @1.1.1.1 2>/dev/null | grep -E '^[0-9.]+$' | head -1 || true)
+  [ -n "$ip" ] || return 1
+  curl -fsS --max-time 20 --resolve "$TUNNEL_HOST:443:$ip" "$PUBLIC_URL/health" >/dev/null 2>&1 || return 1
+  RESOLVER_NOTE="public"
+  return 0
+}
+
+TUNNEL_OK=""
+for _ in $(seq 1 6); do
+  tunnel_answers && { TUNNEL_OK=1; break; }
+  sleep 10
+done
+[ -n "$TUNNEL_OK" ] || die "The tunnel opened but $PUBLIC_URL/health did not answer, on this resolver or 1.1.1.1"
+
+if [ "$RESOLVER_NOTE" = "public" ]; then
+  ok "Tunnel is serving the API ${DIM}(via 1.1.1.1)${OFF}"
+  printf '  %s!%s This Mac has NXDOMAIN cached for that hostname, so a browser *here* cannot\n    reach it until the entry expires. The deployed frontend is unaffected. To clear it:\n      sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder\n' "$RED" "$OFF"
+else
+  ok "Tunnel is serving the API"
+fi
 
 cleanup() {
   printf '\n%sShutting down%s\n' "$BOLD" "$OFF"
