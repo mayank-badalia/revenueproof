@@ -31,6 +31,7 @@ import type {
   MatchProposal,
   EvidenceTrace,
   ResolvedCustomer,
+  WhyTheGap,
   WorkspaceSummary,
 } from "@/lib/types";
 
@@ -665,7 +666,7 @@ function CriticOut({
 
 interface PublishData {
   position: Record<string, number | string | null>;
-  why_the_gap?: { headline: string; causes: { amount: string; items: number; explanation: string }[] };
+  why_the_gap?: WhyTheGap;
   items?: { id: string; description: string; amount: string; is_published: boolean; withheld_because: string | null }[];
 }
 
@@ -699,24 +700,47 @@ function PublishOut({
         />
       </Stats>
 
-      {data.why_the_gap && (
+      {data.why_the_gap?.material && (
         <div className="mb-3">
           <Eyebrow>Why the gap</Eyebrow>
           <p className="mt-1 text-[11.5px] leading-relaxed text-ink-2">
-            {data.why_the_gap.headline}
+            {fromMinor(data.why_the_gap.shortfall, currency)} of the claim is not supported by
+            published evidence.
+            {data.why_the_gap.claim_may_be_wrong
+              ? " Less than half the claim is proven, so the claim itself is one of the explanations."
+              : ""}
           </p>
           <div className="mt-1.5 space-y-1.5">
-            {data.why_the_gap.causes?.map((cause) => (
+            {data.why_the_gap.causes.map((cause) => (
               <Item
-                key={cause.explanation}
-                title={cause.amount}
-                subtitle={`${cause.items} item(s)`}
+                key={cause.classification}
+                title={fromMinor(cause.amount, currency)}
+                subtitle={`${cause.count} item(s) · ${cause.classification.replace(/_/g, " ").toLowerCase()}`}
                 tone="warn"
               >
-                <p className="mt-0.5 text-[11px] leading-relaxed text-ink-2">{cause.explanation}</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-ink-2">{cause.why}</p>
               </Item>
             ))}
           </div>
+
+          {data.why_the_gap.actions.length > 0 && (
+            <>
+              <div className="mt-2.5">
+                <Eyebrow>Verified, held back — what would release it</Eyebrow>
+              </div>
+              <div className="mt-1.5 space-y-1.5">
+                {data.why_the_gap.actions.map((action) => (
+                  <Item
+                    key={action.summary}
+                    title={fromMinor(action.amount, currency)}
+                    subtitle={`${action.count} item(s) · ${action.summary}`}
+                  >
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-ink-2">{action.remedy}</p>
+                  </Item>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
 
